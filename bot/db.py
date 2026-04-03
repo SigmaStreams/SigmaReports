@@ -119,12 +119,24 @@ class ReportDB:
             """
         )
 
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS plex_manual_overrides (
+                guild_id INTEGER NOT NULL,
+                server_name TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (guild_id, server_name)
+            )
+            """
+        )
+
         self.conn.commit()
 
         # Newer features
         self._ensure_column("reports", "ticket_channel_id", "INTEGER")
         self._ensure_column("reports", "resolved_by", "INTEGER")
         self._ensure_column("reports", "resolved_at", "TEXT")
+        self._ensure_column("plex_manual_overrides", "staff_message_id", "INTEGER")
 
         # Default setting values
         if self._get_setting("report_pings_enabled") is None:
@@ -500,6 +512,69 @@ class ReportDB:
             """,
             (int(guild_id), str(server_name).upper(), str(status), now),
         )
+        self.conn.commit()
+
+    def set_plex_manual_override(
+        self,
+        guild_id: int,
+        server_name: str,
+        is_active: bool,
+        staff_message_id: Optional[int] = None,
+    ):
+        cur = self.conn.cursor()
+        server_name = str(server_name).upper()
+
+        if is_active:
+            cur.execute(
+                """
+                INSERT INTO plex_manual_overrides (guild_id, server_name, created_at, staff_message_id)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(guild_id, server_name)
+                DO UPDATE SET created_at=excluded.created_at,
+                              staff_message_id=COALESCE(excluded.staff_message_id, plex_manual_overrides.staff_message_id)
+                """,
+                (int(guild_id), server_name, _utcnow_iso(), int(staff_message_id) if staff_message_id else None),
+            )
+        else:
+            cur.execute(
+                "DELETE FROM plex_manual_overrides WHERE guild_id=? AND server_name=?",
+                (int(guild_id), server_name),
+            )
+
+        self.conn.commit()
+
+    def has_plex_manual_override(self, guild_id: int, server_name: str) -> bool:
+        cur = self.conn.cursor()
+        cur.execute(
+            "SELECT 1 FROM plex_manual_overrides WHERE guild_id=? AND server_name=?",
+            (int(guild_id), str(server_name).upper()),
+        )
+        return cur.fetchone() is not None
+
+    def get_plex_manual_override(self, guild_id: int, server_name: str) -> Optional[dict]:
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            SELECT guild_id, server_name, created_at, staff_message_id
+            FROM plex_manual_overrides
+            WHERE guild_id=? AND server_name=?
+            """,
+            (int(guild_id), str(server_name).upper()),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+
+        return {
+            "guild_id": row["guild_id"],
+            "server_name": row["server_name"],
+            "created_at": row["created_at"],
+            "staff_message_id": row["staff_message_id"],
+        }
+
+    def clear_plex_manual_overrides(self, guild_id: int):
+        cur = self.conn.cursor()
+        cur.execute("DELETE FROM plex_manual_overrides WHERE guild_id=?", (int(guild_id),))
         self.conn.commit()
 
     def get_plex_statuses(self, guild_id: int) -> dict[str, str]:

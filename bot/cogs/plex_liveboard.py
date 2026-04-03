@@ -7,8 +7,14 @@ from discord.ext import commands, tasks
 
 from bot.modals import _get_ping_ids_for_report, build_staff_ping
 
+try:
+    import aiohttp
+except Exception:
+    aiohttp = None  # type: ignore
+
 
 PLEX_LOGS_CHANNEL_ID = 1475676107960356977
+PLEX_404_BODY = "404 page not found"
 
 SERVER_ROLE_IDS = {
     "OMEGA": 1466939252024541423,
@@ -113,6 +119,10 @@ def _parse_state_from_message(content: str) -> str | None:
     if "the plex media server is back up" in text:
         return "Up"
     return None
+
+
+def _normalize_probe_body(text: str) -> str:
+    return " ".join((text or "").strip().lower().split())
 
 
 class PlexServerChoice(app_commands.Choice[str]):
@@ -239,16 +249,112 @@ class PlexLiveboardCog(commands.Cog):
         self.liveboard_view = PlexLiveboardReportView(self)
         self.clear_report_view = PlexDownReportClearView(self)
         self.plex_liveboard_loop.start()
+        self.plex_probe_loop.change_interval(minutes=self.cfg.plex_probe_interval_minutes)
+        self.plex_probe_loop.start()
 
     def cog_unload(self):
         self.plex_liveboard_loop.cancel()
+        self.plex_probe_loop.cancel()
+
+    def get_probe_targets(self) -> dict[str, str]:
+        targets = {
+            "OMEGA": self.cfg.plex_omega_url,
+            "ALPHA": self.cfg.plex_alpha_url,
+            "DELTA": self.cfg.plex_delta_url,
+        }
+        return {server_name: url for server_name, url in targets.items() if url}
+
+    async def probe_server(self, session, url: str) -> str:
+        if aiohttp is None:
+            return "Unknown"
+
+        try:
+            async with session.get(url) as resp:
+                if resp.status == 404:
+                    return "Down"
+
+                if resp.status == 200:
+                    body = await resp.text(errors="ignore")
+                    if _normalize_probe_body(body) == PLEX_404_BODY:
+                        return "Down"
+
+                return "Up"
+        except (asyncio.TimeoutError, aiohttp.ClientError):
+            return "Down"
+
+    async def collect_probe_statuses(self) -> dict[str, str]:
+        probe_targets = self.get_probe_targets()
+        if not probe_targets or aiohttp is None:
+            return {}
+
+        timeout = aiohttp.ClientTimeout(total=self.cfg.plex_probe_timeout_seconds)
+        statuses: dict[str, str] = {}
+
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            for server_name, url in probe_targets.items():
+                statuses[server_name] = await self.probe_server(session, url)
+
+        return statuses
+
+    async def apply_probe_statuses(self, guild_ids: list[int], probe_statuses: dict[str, str]):
+        if not guild_ids or not probe_statuses:
+            return
+
+        updated_at = _utcnow().isoformat()
+
+        for guild_id in guild_ids:
+            wrote_status = False
+            for server_name, status in probe_statuses.items():
+                if self.db.has_plex_manual_override(guild_id, server_name):
+                    if status == "Up":
+                        await self.auto_clear_down_report(guild_id, server_name, "URL health check")
+                        wrote_status = True
+                    continue
+
+                self.db.set_plex_status(guild_id, server_name, status, updated_at)
+                wrote_status = True
+
+            if wrote_status:
+                await self.update_plex_liveboard(guild_id)
+
+    async def auto_clear_down_report(self, guild_id: int, server_name: str, source_name: str):
+        override = self.db.get_plex_manual_override(guild_id, server_name)
+        if not override:
+            return
+
+        self.db.set_plex_manual_override(guild_id, server_name, False)
+        self.db.set_plex_status(guild_id, server_name, "Up", _utcnow().isoformat())
+
+        guild = self.bot.get_guild(guild_id)
+        if not guild:
+            return
+
+        staff_channel = self.get_staff_channel(guild)
+        if not staff_channel:
+            return
+
+        staff_message_id = override.get("staff_message_id")
+        if not staff_message_id:
+            return
+
+        try:
+            message = await staff_channel.fetch_message(int(staff_message_id))
+        except (discord.NotFound, discord.Forbidden):
+            return
+
+        embed = message.embeds[0] if message.embeds else None
+        reporter = await self.get_reporter_from_embed(guild, embed)
+        await message.edit(
+            embed=self.build_auto_cleared_report_embed(reporter, server_name, source_name),
+            view=None,
+        )
 
     def build_plex_embed(self, statuses: dict[str, str]) -> discord.Embed:
         embed = discord.Embed(
             title="🖥️ Plex Liveboard",
             description=(
-                "This board updates automatically from Plex webhook logs.\n"
-                "Only Plex server up/down notifications affect this board.\n\n"
+                "This board updates automatically from Plex webhook logs and direct URL health checks.\n"
+                "A server is marked down when the probe gets a real 404, a literal 200/404 page, or the host cannot be reached.\n\n"
                 "If your assigned server is shown as up when it is actually down, use the button below to report it.\n\n"
                 f"Last refreshed: {_ts(_utcnow())}"
             ),
@@ -300,6 +406,28 @@ class PlexLiveboardCog(commands.Cog):
         embed.add_field(name="Original reporter", value=reporter_text, inline=True)
         embed.add_field(name="Server", value=pretty_name, inline=True)
         embed.add_field(name="Cleared by", value=clearer.mention, inline=False)
+        embed.add_field(name="Cleared at", value=_ts(now), inline=False)
+        embed.set_footer(text=f"server={server_name}")
+        return embed
+
+    def build_auto_cleared_report_embed(
+        self,
+        reporter: discord.abc.User | None,
+        server_name: str,
+        source_name: str,
+    ) -> discord.Embed:
+        now = _utcnow()
+        pretty_name = _display_server_name(server_name)
+        reporter_text = reporter.mention if reporter else "Unknown user"
+        embed = discord.Embed(
+            title=f"Plex server report auto-cleared: {pretty_name}",
+            description=f"Report cleared automatically after {source_name} detected the server is back up.",
+            color=discord.Color.green(),
+            timestamp=now,
+        )
+        embed.add_field(name="Original reporter", value=reporter_text, inline=True)
+        embed.add_field(name="Server", value=pretty_name, inline=True)
+        embed.add_field(name="Cleared by", value=f"Automatic ({source_name})", inline=False)
         embed.add_field(name="Cleared at", value=_ts(now), inline=False)
         embed.set_footer(text=f"server={server_name}")
         return embed
@@ -437,16 +565,6 @@ class PlexLiveboardCog(commands.Cog):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.edit_message(content="Use this in a server.", view=None)
 
-        statuses = await self.get_current_statuses(interaction.guild.id)
-        if statuses.get(server_name, "Unknown") != "Up":
-            return await interaction.response.edit_message(
-                content=(
-                    f"ℹ️ {_display_server_name(server_name)} is no longer stored as **{statuses.get(server_name, 'Unknown')}**. "
-                    "No report was sent."
-                ),
-                view=None,
-            )
-
         staff_channel = self.get_staff_channel(interaction.guild)
         if not staff_channel:
             return await interaction.response.edit_message(
@@ -454,21 +572,43 @@ class PlexLiveboardCog(commands.Cog):
                 view=None,
             )
 
-        self.db.set_plex_status(interaction.guild.id, server_name, "Down", _utcnow().isoformat())
         try:
-            await self.update_plex_liveboard(interaction.guild.id)
+            async with self._lock:
+                statuses = await self.get_current_statuses(interaction.guild.id)
+                if statuses.get(server_name, "Unknown") != "Up":
+                    return await interaction.response.edit_message(
+                        content=(
+                            f"ℹ️ {_display_server_name(server_name)} is no longer stored as **{statuses.get(server_name, 'Unknown')}**. "
+                            "No report was sent."
+                        ),
+                        view=None,
+                    )
+
+                self.db.set_plex_manual_override(interaction.guild.id, server_name, True)
+                self.db.set_plex_status(interaction.guild.id, server_name, "Down", _utcnow().isoformat())
+                await self.update_plex_liveboard(interaction.guild.id)
+
             ping_text = ""
             if self.db.get_report_pings_enabled():
                 ping_text = build_staff_ping(_get_ping_ids_for_report(self.cfg, "vod"))
 
-            await staff_channel.send(
+            staff_message = await staff_channel.send(
                 content=ping_text,
                 embed=self.build_staff_report_embed(interaction.user, server_name),
                 view=self.clear_report_view,
             )
+            async with self._lock:
+                self.db.set_plex_manual_override(
+                    interaction.guild.id,
+                    server_name,
+                    True,
+                    staff_message_id=staff_message.id,
+                )
         except Exception:
-            self.db.set_plex_status(interaction.guild.id, server_name, "Up", _utcnow().isoformat())
-            await self.update_plex_liveboard(interaction.guild.id)
+            async with self._lock:
+                self.db.set_plex_manual_override(interaction.guild.id, server_name, False)
+                self.db.set_plex_status(interaction.guild.id, server_name, "Up", _utcnow().isoformat())
+                await self.update_plex_liveboard(interaction.guild.id)
             return await interaction.response.edit_message(
                 content="❌ I couldn’t post the report in the staff channel, so the status was left unchanged.",
                 view=None,
@@ -526,8 +666,10 @@ class PlexLiveboardCog(commands.Cog):
 
         reporter = await self.get_reporter_from_embed(interaction.guild, embed)
 
-        self.db.set_plex_status(interaction.guild.id, server_name, "Up", _utcnow().isoformat())
-        await self.update_plex_liveboard(interaction.guild.id)
+        async with self._lock:
+            self.db.set_plex_manual_override(interaction.guild.id, server_name, False)
+            self.db.set_plex_status(interaction.guild.id, server_name, "Up", _utcnow().isoformat())
+            await self.update_plex_liveboard(interaction.guild.id)
 
         await message.edit(
             embed=self.build_cleared_report_embed(reporter, interaction.user, server_name),
@@ -549,8 +691,15 @@ class PlexLiveboardCog(commands.Cog):
         if not server or not state:
             return
 
-        self.db.set_plex_status(msg.guild.id, server, state, _utcnow().isoformat())
-        await self.update_plex_liveboard(msg.guild.id)
+        async with self._lock:
+            if self.db.has_plex_manual_override(msg.guild.id, server):
+                if state == "Up":
+                    await self.auto_clear_down_report(msg.guild.id, server, "Plex webhook")
+                    await self.update_plex_liveboard(msg.guild.id)
+                return
+
+            self.db.set_plex_status(msg.guild.id, server, state, _utcnow().isoformat())
+            await self.update_plex_liveboard(msg.guild.id)
 
     @commands.Cog.listener()
     async def on_message(self, msg: discord.Message):
@@ -573,6 +722,23 @@ class PlexLiveboardCog(commands.Cog):
 
     @plex_liveboard_loop.before_loop
     async def before_loop(self):
+        await self.bot.wait_until_ready()
+
+    @tasks.loop(minutes=5)
+    async def plex_probe_loop(self):
+        probe_statuses = await self.collect_probe_statuses()
+        if not probe_statuses:
+            return
+
+        guild_ids = [int(settings["guild_id"]) for settings in self.db.list_plex_liveboards()]
+        if not guild_ids:
+            return
+
+        async with self._lock:
+            await self.apply_probe_statuses(guild_ids, probe_statuses)
+
+    @plex_probe_loop.before_loop
+    async def before_probe_loop(self):
         await self.bot.wait_until_ready()
 
     @app_commands.command(
@@ -610,6 +776,12 @@ class PlexLiveboardCog(commands.Cog):
             return await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
 
         await interaction.response.send_message("Refreshing…", ephemeral=True)
+
+        probe_statuses = await self.collect_probe_statuses()
+        if probe_statuses:
+            async with self._lock:
+                await self.apply_probe_statuses([interaction.guild.id], probe_statuses)
+
         await self.update_plex_liveboard(interaction.guild.id)
 
     @app_commands.command(
@@ -658,8 +830,10 @@ class PlexLiveboardCog(commands.Cog):
         if not _is_staff(interaction.user, self.cfg.staff_role_id):
             return await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
 
-        self.db.set_plex_status(interaction.guild.id, server.value, status.value, _utcnow().isoformat())
-        await self.update_plex_liveboard(interaction.guild.id)
+        async with self._lock:
+            self.db.set_plex_manual_override(interaction.guild.id, server.value, False)
+            self.db.set_plex_status(interaction.guild.id, server.value, status.value, _utcnow().isoformat())
+            await self.update_plex_liveboard(interaction.guild.id)
 
         await interaction.response.send_message(
             f"✅ Set **{server.name}** to **{status.value}**.",
@@ -699,8 +873,10 @@ class PlexLiveboardCog(commands.Cog):
         if not _is_staff(interaction.user, self.cfg.staff_role_id):
             return await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
 
-        self.db.clear_plex_statuses(interaction.guild.id)
-        await self.update_plex_liveboard(interaction.guild.id)
+        async with self._lock:
+            self.db.clear_plex_manual_overrides(interaction.guild.id)
+            self.db.clear_plex_statuses(interaction.guild.id)
+            await self.update_plex_liveboard(interaction.guild.id)
 
         await interaction.response.send_message("✅ Cleared stored Plex statuses.", ephemeral=True)
 
