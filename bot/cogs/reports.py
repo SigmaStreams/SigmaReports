@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from bot.modals import TVReportModal, VODTypePickerView
 from bot.views import ReportActionView
-from bot.utils import build_staff_embed
+from bot.utils import build_staff_embed, report_subject
 
 OWNER_ID = 1229271933736976395
 
@@ -49,6 +49,27 @@ class Reports(commands.Cog):
             return "the support channel"
         ch = interaction.guild.get_channel(self.cfg.support_channel_id)
         return ch.mention if ch else "the support channel"
+
+    def _staff_jump_link(self, guild_id: int, staff_message_id: int | None) -> str | None:
+        if not staff_message_id or not self.cfg.staff_channel_id:
+            return None
+        return f"https://discord.com/channels/{guild_id}/{self.cfg.staff_channel_id}/{int(staff_message_id)}"
+
+    def _format_open_report_row(self, guild_id: int, report: dict) -> str:
+        rid = report.get("id")
+        status = str(report.get("status") or "Open").strip()
+        payload = report.get("payload") or {}
+        subject = report_subject(report.get("report_type") or "", payload)
+        created_at = report.get("created_at")
+        created_txt = _iso_to_discord_ts(str(created_at)) if created_at else None
+        jump_link = self._staff_jump_link(guild_id, report.get("staff_message_id"))
+
+        parts = [f"**#{rid}**", f"`{status}`", subject]
+        if created_txt:
+            parts.append(created_txt)
+        if jump_link:
+            parts.append(f"[staff]({jump_link})")
+        return " • ".join(parts)
 
     def _is_staff(self, interaction: discord.Interaction) -> bool:
         member = interaction.user if isinstance(interaction.user, discord.Member) else None
@@ -390,6 +411,69 @@ class Reports(commands.Cog):
             f"✅ Marked **{updated}** report(s) as **Resolved**.",
             ephemeral=True,
         )
+
+    @app_commands.command(
+        name="list-open-reports",
+        description="List currently open reports in this server (staff only).",
+    )
+    async def list_open_reports(self, interaction: discord.Interaction):
+        if not interaction.guild:
+            return await interaction.response.send_message(
+                "This must be used in a server.",
+                ephemeral=True,
+            )
+
+        if not self._is_staff(interaction):
+            return await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
+
+        reports = self.db.list_reports_by_statuses(
+            interaction.guild.id,
+            ("Open", "Ticket Open"),
+        )
+
+        if not reports:
+            return await interaction.response.send_message(
+                "No reports with status **Open** or **Ticket Open** were found.",
+                ephemeral=True,
+            )
+
+        tv_reports = [r for r in reports if str(r.get("report_type") or "").strip().upper() == "TV"]
+        vod_reports = [r for r in reports if str(r.get("report_type") or "").strip().upper() == "VOD"]
+        other_reports = [
+            r for r in reports
+            if str(r.get("report_type") or "").strip().upper() not in {"TV", "VOD"}
+        ]
+
+        embed = discord.Embed(
+            title="Open Reports",
+            description=f"Found **{len(reports)}** report(s) still marked open.",
+        )
+
+        if tv_reports:
+            embed.add_field(
+                name=f"TV ({len(tv_reports)})",
+                value="\n".join(self._format_open_report_row(interaction.guild.id, r) for r in tv_reports[:20]),
+                inline=False,
+            )
+
+        if vod_reports:
+            embed.add_field(
+                name=f"VOD ({len(vod_reports)})",
+                value="\n".join(self._format_open_report_row(interaction.guild.id, r) for r in vod_reports[:20]),
+                inline=False,
+            )
+
+        if other_reports:
+            embed.add_field(
+                name=f"Other ({len(other_reports)})",
+                value="\n".join(self._format_open_report_row(interaction.guild.id, r) for r in other_reports[:20]),
+                inline=False,
+            )
+
+        if len(reports) > 60:
+            embed.set_footer(text=f"Showing the first 60 reports out of {len(reports)}.")
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     # ----------------------------
     # Reactivate
