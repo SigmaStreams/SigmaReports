@@ -56,6 +56,87 @@ class Reports(commands.Cog):
             return False
         return any(r.id == self.cfg.staff_role_id for r in member.roles)
 
+    async def _refresh_staff_report_message(self, guild: discord.Guild, report: dict, *, disable_actions: bool) -> None:
+        staff_message_id = report.get("staff_message_id")
+        if not staff_message_id:
+            return
+
+        staff_ch = guild.get_channel(self.cfg.staff_channel_id)
+        if not isinstance(staff_ch, discord.TextChannel):
+            return
+
+        try:
+            staff_msg = await staff_ch.fetch_message(int(staff_message_id))
+        except Exception:
+            return
+
+        try:
+            reporter = await self.bot.fetch_user(int(report["reporter_id"]))
+        except Exception:
+            reporter = self.bot.get_user(int(report["reporter_id"]))
+            if reporter is None:
+                return
+
+        source = guild.get_channel(int(report["source_channel_id"])) or staff_ch
+        status = str(report.get("status") or "Open")
+        ticket_channel_id = report.get("ticket_channel_id")
+
+        embed = build_staff_embed(
+            int(report["id"]),
+            report["report_type"],
+            reporter,
+            source,
+            report["payload"],
+            status,
+            ticket_channel_id=int(ticket_channel_id) if ticket_channel_id else None,
+            claimed_by_user_id=report.get("claimed_by_user_id"),
+            claimed_at=report.get("claimed_at"),
+            resolved_by_id=report.get("resolved_by"),
+            resolved_note=report.get("resolved_note"),
+        )
+
+        view = ReportActionView(
+            self.db,
+            self.cfg.staff_channel_id,
+            self.cfg.support_channel_id,
+            self.cfg.public_updates,
+            self.cfg.staff_role_id,
+        )
+        if disable_actions:
+            view.disable_all()
+
+        try:
+            await staff_msg.edit(embed=embed, view=view)
+        except Exception:
+            return
+
+    async def _close_ticket_channel_if_any(self, guild: discord.Guild, report_id: int) -> None:
+        ticket_id = None
+        try:
+            ticket_id = self.db.get_ticket_channel_id(report_id)
+        except Exception:
+            ticket_id = None
+
+        if not ticket_id:
+            return
+
+        ch = guild.get_channel(int(ticket_id))
+        if isinstance(ch, discord.TextChannel):
+            try:
+                await ch.delete(reason=f"Report #{report_id} closed from bulk cleanup")
+            except discord.Forbidden:
+                try:
+                    await ch.edit(name=f"closed-report-{report_id}")
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+        try:
+            self.db.set_ticket_channel_id(report_id, None)
+        except Exception:
+            pass
+
     async def _block_gate(self, interaction: discord.Interaction) -> bool:
         if not interaction.guild:
             return True
@@ -258,6 +339,55 @@ class Reports(commands.Cog):
 
         await interaction.followup.send(
             f"✅ Synced **{len(synced)}** commands.",
+            ephemeral=True,
+        )
+
+    @app_commands.command(
+        name="close-open-reports",
+        description="Mark all open reports as resolved in this server (staff only).",
+    )
+    async def close_open_reports(self, interaction: discord.Interaction):
+        if not interaction.guild:
+            return await interaction.response.send_message(
+                "This must be used in a server.",
+                ephemeral=True,
+            )
+
+        if not self._is_staff(interaction):
+            return await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
+
+        reports_to_close = self.db.list_reports_by_statuses(
+            interaction.guild.id,
+            ("Open", "Ticket Open"),
+        )
+        updated = self.db.close_open_reports(interaction.guild.id)
+
+        if updated > 0:
+            for report in reports_to_close:
+                await self._close_ticket_channel_if_any(interaction.guild, int(report["id"]))
+                report["status"] = "Resolved"
+                report["ticket_channel_id"] = None
+                await self._refresh_staff_report_message(
+                    interaction.guild,
+                    report,
+                    disable_actions=True,
+                )
+
+        liveboard = self.bot.get_cog("LiveboardCog")
+        if liveboard:
+            try:
+                await liveboard.update_liveboard(interaction.guild.id)
+            except Exception:
+                pass
+
+        if updated == 0:
+            return await interaction.response.send_message(
+                "No reports with status **Open** or **Ticket Open** were found.",
+                ephemeral=True,
+            )
+
+        await interaction.response.send_message(
+            f"✅ Marked **{updated}** report(s) as **Resolved**.",
             ephemeral=True,
         )
 

@@ -167,6 +167,21 @@ class ReportDB:
         cur.execute("UPDATE reports SET status=?, updated_at=? WHERE id=?", (status, _utcnow_iso(), int(report_id)))
         self.conn.commit()
 
+    def close_open_reports(self, guild_id: int) -> int:
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            UPDATE reports
+            SET status='Resolved',
+                updated_at=?
+            WHERE guild_id=?
+              AND status IN ('Open', 'Ticket Open')
+            """,
+            (_utcnow_iso(), int(guild_id)),
+        )
+        self.conn.commit()
+        return int(cur.rowcount or 0)
+
     def mark_resolved(self, report_id: int, staff_user_id: int) -> None:
         now = _utcnow_iso()
         cur = self.conn.cursor()
@@ -206,6 +221,25 @@ class ReportDB:
         cur = self.conn.cursor()
         cur.execute("SELECT * FROM reports WHERE staff_message_id=?", (int(staff_message_id),))
         return self._row_to_report(cur.fetchone())
+
+    def list_reports_by_statuses(self, guild_id: int, statuses: Iterable[str]) -> list[dict]:
+        values = [str(status).strip() for status in statuses if str(status).strip()]
+        if not values:
+            return []
+
+        placeholders = ",".join("?" for _ in values)
+        cur = self.conn.cursor()
+        cur.execute(
+            f"""
+            SELECT *
+            FROM reports
+            WHERE guild_id=?
+              AND status IN ({placeholders})
+            ORDER BY id DESC
+            """,
+            [int(guild_id), *values],
+        )
+        return [self._row_to_report(r) for r in cur.fetchall() if r]
 
     def _row_to_report(self, row):
         if not row:
