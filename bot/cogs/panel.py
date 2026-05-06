@@ -387,20 +387,6 @@ class _TVIssueChoiceView(discord.ui.View):
         }
         await submit_tv_report_with_feedback(interaction, self.db, self.cfg, payload)
 
-    @discord.ui.button(label="Other / Explain", style=discord.ButtonStyle.secondary, row=1)
-    async def other_issue(self, interaction: discord.Interaction, button: discord.ui.Button):
-        del button
-        from bot.modals import TVIssueModal
-
-        await interaction.response.send_modal(
-            TVIssueModal(
-                self.db,
-                self.cfg,
-                channel_name=self.channel_name,
-                channel_category=self.channel_category,
-            )
-        )
-
 
 class _TVIssueFollowupView(discord.ui.View):
     def __init__(self, db, cfg, *, channel_name: str, channel_category: str, parent_issue: str):
@@ -448,20 +434,6 @@ class _TVIssueFollowupView(discord.ui.View):
                 channel_name=self.channel_name,
                 channel_category=self.channel_category,
             ),
-        )
-
-    @discord.ui.button(label="Other / Explain", style=discord.ButtonStyle.secondary, row=1)
-    async def other_issue(self, interaction: discord.Interaction, button: discord.ui.Button):
-        del button
-        from bot.modals import TVIssueModal
-
-        await interaction.response.send_modal(
-            TVIssueModal(
-                self.db,
-                self.cfg,
-                channel_name=self.channel_name,
-                channel_category=self.channel_category,
-            )
         )
 
 
