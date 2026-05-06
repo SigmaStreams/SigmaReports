@@ -46,6 +46,11 @@ This should be the **TMDB API Read Access Token (v4)**.
 
 ## Setup
 
+### Python version
+- Local runs should use **Python 3.12.x**.
+- The current `discord.py==2.4.0` dependency imports `audioop`, which is removed in Python 3.13 and causes the bot to crash during startup.
+- Docker is already pinned to Python 3.12 in the existing Dockerfile.
+
 ### 1. Clone the repo
 ```bash 
 git clone https://github.com/yourname/discord-reports-bot.git

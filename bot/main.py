@@ -1,3 +1,11 @@
+import sys
+
+if sys.version_info >= (3, 13):
+    raise RuntimeError(
+        "SigmaReports requires Python 3.12.x or earlier when using discord.py 2.4.0. "
+        "Python 3.13 removed the 'audioop' module that discord.py imports during startup."
+    )
+
 import asyncio
 import random
 from typing import Optional
