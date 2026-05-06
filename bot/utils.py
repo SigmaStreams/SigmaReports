@@ -69,7 +69,19 @@ def _vod_type_label(payload: dict) -> str:
         return "Movie"
     if raw == "tv":
         return "TV Show"
-    return "Unknown"
+
+    ref = str((payload or {}).get("reference_link") or "").strip().lower()
+    if "thetvdb" in ref:
+        return "TV Show"
+    if "themoviedb" in ref or "tmdb" in ref:
+        return "Movie"
+
+    return "Not provided"
+
+
+def _vod_language_label(payload: dict) -> str:
+    language = str((payload or {}).get("language") or "").strip()
+    return language or "Not provided"
 
 
 def _vod_4k_label(payload: dict) -> str:
@@ -82,7 +94,7 @@ def _vod_4k_label(payload: dict) -> str:
         return "Yes"
     if quality:
         return "No"
-    return "Unknown"
+    return "Not provided"
 
 
 def _iso_to_discord_ts(iso: Optional[str]) -> Optional[str]:
@@ -160,7 +172,7 @@ def build_staff_embed(
 
     if rt == "VOD":
         vod_title = (payload or {}).get("title") or "Unknown"
-        language = (payload or {}).get("language") or "Unknown"
+        language = _vod_language_label(payload)
         is_4k = _vod_4k_label(payload)
         content_type = _vod_type_label(payload)
         issue = (payload or {}).get("issue") or "—"

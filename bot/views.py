@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import discord
 
 from bot.db import ReportDB
-from bot.utils import build_staff_embed, report_subject, try_dm
+from bot.utils import _vod_4k_label, _vod_language_label, _vod_type_label, build_staff_embed, report_subject, try_dm
 
 
 CLOSED_STATUSES = {"Resolved", "Can't replicate", "Fixed", "Not Resolved"}
@@ -59,31 +59,21 @@ def _build_ticket_embed(report: dict, reporter: discord.abc.User, guild: discord
 
     elif rtype == "VOD":
         title = (payload.get("title") or "Unknown").strip()
-        language = (payload.get("language") or "Unknown").strip()
-        is_4k = (payload.get("is_4k") or "").strip()
-        if not is_4k:
-            quality = (payload.get("quality") or "").strip().lower()
-            is_4k = "Yes" if quality == "4k" else ("No" if quality else "Unknown")
-
-        content_type = (payload.get("content_type") or "Unknown").strip().lower()
-        if content_type == "movie":
-            content_type_label = "Movie"
-        elif content_type == "tv":
-            content_type_label = "TV Show"
-        else:
-            content_type_label = "Unknown"
+        language = _vod_language_label(payload)
+        is_4k = _vod_4k_label(payload)
+        content_type_label = _vod_type_label(payload)
 
         issue = (payload.get("issue") or "—").strip()
         ref = (payload.get("reference_link") or "").strip()
 
         embed.add_field(name="Title", value=title or "Unknown", inline=False)
-        embed.add_field(name="English or Foreign", value=language or "Unknown", inline=True)
+        embed.add_field(name="English or Foreign", value=language, inline=True)
 
         if ref:
             label = _nice_ref_label(ref)
             embed.add_field(name="Reference", value=f"[{label}]({ref})", inline=True)
 
-        embed.add_field(name="4K Title", value=is_4k or "Unknown", inline=True)
+        embed.add_field(name="4K Title", value=is_4k, inline=True)
         embed.add_field(name="Movie or TV Show", value=content_type_label, inline=True)
 
         embed.add_field(name="Issue", value=issue[:1024] if issue else "—", inline=False)
