@@ -67,15 +67,37 @@ It is built around Discord modals, persistent button views, a staff review workf
 - Docker is already pinned to Python 3.12
 - `discord.py==2.4.0` is not compatible with Python 3.13 because Python 3.13 removed `audioop`
 
-If you need to rebuild the local venv on this machine:
+### Create a local venv
+
+Use any Python 3.12 interpreter available on your machine.
+
+On many systems, one of these will work:
 
 ```bash
-mv .venv .venv-py313-backup
-/opt/homebrew/bin/python3.12 -m venv .venv
+python3.12 -m venv .venv
 ./.venv/bin/pip install -r requirements.txt
 ```
 
-If the backup already exists and you have already switched to Python 3.12, skip the first step.
+If `python3.12` is not available but your default `python3` is already Python 3.12, use:
+
+```bash
+python3 -m venv .venv
+./.venv/bin/pip install -r requirements.txt
+```
+
+You can confirm the interpreter version with:
+
+```bash
+python3.12 --version
+```
+
+or:
+
+```bash
+python3 --version
+```
+
+If you already have a `.venv` created with the wrong Python version, remove it and recreate it with Python 3.12.
 
 ## Configuration
 
@@ -141,6 +163,17 @@ Rebuild them with:
 ```
 
 The raw export must be built first, then the selector dataset.
+
+### Rebuild without a local venv
+
+If you prefer to run the dataset scripts inside Docker instead of creating a local Python environment, use:
+
+```bash
+docker compose run --rm --volume "$PWD:/app" --workdir /app reports-bot python scripts/build_iptv_json.py
+docker compose run --rm --volume "$PWD:/app" --workdir /app reports-bot python scripts/build_iptv_selector_json.py
+```
+
+That bind-mounts the full repo into the container so the scripts, playlist file, and `data/` output directory are all available.
 
 ### Bring Your Own M3U
 
