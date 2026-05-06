@@ -4,6 +4,7 @@ __pycache__/
 .venv/
 .venv-py313-backup/
 data/
+data/iptv_channels.json
 
 # OS noise
 .DS_Store

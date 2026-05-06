@@ -193,7 +193,7 @@ class Reports(commands.Cog):
 
     @app_commands.command(
         name="report-tv",
-        description="Report an issue with a live TV channel.",
+        description="Manual fallback for live TV reports when the panel is unavailable.",
     )
     async def report_tv(self, interaction: discord.Interaction):
         if not self._allowed_channel(interaction):
