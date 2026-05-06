@@ -59,16 +59,32 @@ def _build_ticket_embed(report: dict, reporter: discord.abc.User, guild: discord
 
     elif rtype == "VOD":
         title = (payload.get("title") or "Unknown").strip()
-        quality = (payload.get("quality") or "Unknown").strip()
+        language = (payload.get("language") or "Unknown").strip()
+        is_4k = (payload.get("is_4k") or "").strip()
+        if not is_4k:
+            quality = (payload.get("quality") or "").strip().lower()
+            is_4k = "Yes" if quality == "4k" else ("No" if quality else "Unknown")
+
+        content_type = (payload.get("content_type") or "Unknown").strip().lower()
+        if content_type == "movie":
+            content_type_label = "Movie"
+        elif content_type == "tv":
+            content_type_label = "TV Show"
+        else:
+            content_type_label = "Unknown"
+
         issue = (payload.get("issue") or "—").strip()
         ref = (payload.get("reference_link") or "").strip()
 
         embed.add_field(name="Title", value=title or "Unknown", inline=False)
-        embed.add_field(name="Quality", value=quality or "Unknown", inline=True)
+        embed.add_field(name="English or Foreign", value=language or "Unknown", inline=True)
 
         if ref:
             label = _nice_ref_label(ref)
             embed.add_field(name="Reference", value=f"[{label}]({ref})", inline=True)
+
+        embed.add_field(name="4K Title", value=is_4k or "Unknown", inline=True)
+        embed.add_field(name="Movie or TV Show", value=content_type_label, inline=True)
 
         embed.add_field(name="Issue", value=issue[:1024] if issue else "—", inline=False)
 

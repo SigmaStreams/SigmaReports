@@ -63,6 +63,28 @@ def _ref_link_field(payload: dict) -> tuple[str, str] | None:
     return ("Reference", f"[{label}]({link_str})")
 
 
+def _vod_type_label(payload: dict) -> str:
+    raw = str((payload or {}).get("content_type") or "").strip().lower()
+    if raw == "movie":
+        return "Movie"
+    if raw == "tv":
+        return "TV Show"
+    return "Unknown"
+
+
+def _vod_4k_label(payload: dict) -> str:
+    value = str((payload or {}).get("is_4k") or "").strip()
+    if value:
+        return value
+
+    quality = str((payload or {}).get("quality") or "").strip().lower()
+    if quality == "4k":
+        return "Yes"
+    if quality:
+        return "No"
+    return "Unknown"
+
+
 def _iso_to_discord_ts(iso: Optional[str]) -> Optional[str]:
     if not iso:
         return None
@@ -138,15 +160,20 @@ def build_staff_embed(
 
     if rt == "VOD":
         vod_title = (payload or {}).get("title") or "Unknown"
-        quality = (payload or {}).get("quality") or "Unknown"
+        language = (payload or {}).get("language") or "Unknown"
+        is_4k = _vod_4k_label(payload)
+        content_type = _vod_type_label(payload)
         issue = (payload or {}).get("issue") or "—"
 
         embed.add_field(name="Title", value=str(vod_title), inline=False)
-        embed.add_field(name="Quality", value=str(quality), inline=True)
+        embed.add_field(name="English or Foreign", value=str(language), inline=True)
 
         ref = _ref_link_field(payload)
         if ref:
             embed.add_field(name=ref[0], value=ref[1], inline=True)
+
+        embed.add_field(name="4K Title", value=str(is_4k), inline=True)
+        embed.add_field(name="Movie or TV Show", value=str(content_type), inline=True)
 
         embed.add_field(name="Issue", value=str(issue), inline=False)
 
