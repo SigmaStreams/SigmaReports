@@ -84,6 +84,11 @@ def _vod_language_label(payload: dict) -> str:
     return language or "Not provided"
 
 
+def _vod_requested_label(payload: dict) -> str:
+    requested = str((payload or {}).get("requested_via_bot") or "").strip()
+    return requested or "Not provided"
+
+
 def _vod_4k_label(payload: dict) -> str:
     value = str((payload or {}).get("is_4k") or "").strip()
     if value:
@@ -172,12 +177,14 @@ def build_staff_embed(
 
     if rt == "VOD":
         vod_title = (payload or {}).get("title") or "Unknown"
+        requested = _vod_requested_label(payload)
         language = _vod_language_label(payload)
         is_4k = _vod_4k_label(payload)
         content_type = _vod_type_label(payload)
         issue = (payload or {}).get("issue") or "—"
 
         embed.add_field(name="Title", value=str(vod_title), inline=False)
+        embed.add_field(name="Requested Through Bot", value=str(requested), inline=True)
         embed.add_field(name="English or Foreign", value=str(language), inline=True)
 
         ref = _ref_link_field(payload)

@@ -409,6 +409,7 @@ class TVReportModal(discord.ui.Modal, title="Report TV Issue"):
 
 def _new_vod_state() -> dict:
     return {
+        "requested_via_bot": "",
         "title": "",
         "language": "",
         "reference_link": "",
@@ -505,6 +506,7 @@ class _VODCombinedTextModal(discord.ui.Modal, title="VOD Text Questions"):
             return
 
         payload = {
+            "requested_via_bot": self.state["requested_via_bot"],
             "title": self.state["title"],
             "language": self.state["language"],
             "reference_link": self.state["reference_link"],
@@ -602,6 +604,28 @@ class _VODSelect(discord.ui.Select):
         await self.view.handle_selection(interaction, self.values[0])
 
 
+class _VODRequestedQuestionView(_VODStepView):
+    def __init__(self, db: ReportDB, cfg, requester_id: int, state: dict):
+        super().__init__(db, cfg, requester_id, state)
+        self.add_item(
+            _VODSelect(
+                placeholder="Was this title requested through the Requests Bot?",
+                options=[
+                    discord.SelectOption(label="Yes", value="Yes"),
+                    discord.SelectOption(label="No", value="No"),
+                ],
+                custom_id="vodstep:requested",
+            )
+        )
+
+    async def handle_selection(self, interaction: discord.Interaction, value: str):
+        self.state["requested_via_bot"] = value
+        await interaction.response.edit_message(
+            content="English or Foreign?",
+            view=_VODLanguageQuestionView(self.db, self.cfg, self.requester_id, self.state),
+        )
+
+
 class _VODLanguageQuestionView(_VODStepView):
     def __init__(self, db: ReportDB, cfg, requester_id: int, state: dict):
         super().__init__(db, cfg, requester_id, state)
@@ -662,13 +686,18 @@ class _VODContentTypeQuestionView(_VODStepView):
 
     async def handle_selection(self, interaction: discord.Interaction, value: str):
         self.state["content_type"] = _normalize_vod_content_type(value)
-        await interaction.response.edit_message(
-            content="Click Continue to finish your report.",
-            view=_VODTitleQuestionView(self.db, self.cfg, self.requester_id, self.state),
+        await interaction.response.send_modal(
+            _VODCombinedTextModal(
+                self.db,
+                self.cfg,
+                self.requester_id,
+                self.state,
+                interaction,
+            )
         )
 
 
-class VODQuestionnaireView(_VODLanguageQuestionView):
+class VODQuestionnaireView(_VODRequestedQuestionView):
     def __init__(self, db: ReportDB, cfg, requester_id: int):
         super().__init__(db, cfg, requester_id, _new_vod_state())
 

@@ -220,7 +220,7 @@ class Reports(commands.Cog):
             return
 
         await interaction.response.send_message(
-            "English or Foreign?",
+            "Was this title requested through the Requests Bot?",
             view=VODQuestionnaireView(self.db, self.cfg, interaction.user.id),
             ephemeral=True,
         )
