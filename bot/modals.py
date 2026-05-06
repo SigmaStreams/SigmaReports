@@ -339,6 +339,46 @@ async def _submit_vod_report(interaction: discord.Interaction, db: ReportDB, cfg
     return report_id
 
 
+async def _submit_tv_report(interaction: discord.Interaction, db: ReportDB, cfg, payload: dict) -> int:
+    report_id = db.create_report(
+        "tv",
+        interaction.user.id,
+        interaction.guild.id,
+        interaction.channel.id,
+        payload,
+    )
+
+    staff_channel = interaction.guild.get_channel(cfg.staff_channel_id)
+    if not isinstance(staff_channel, discord.TextChannel):
+        return await interaction.response.send_message("❌ Staff channel not found.", ephemeral=True)
+
+    embed = build_staff_embed(
+        report_id,
+        "tv",
+        interaction.user,
+        interaction.channel,
+        payload,
+        "Open",
+    )
+
+    view = ReportActionView(
+        db,
+        cfg.staff_channel_id,
+        cfg.support_channel_id,
+        cfg.public_updates,
+        cfg.staff_role_id,
+    )
+
+    ping_text = ""
+    if db.get_report_pings_enabled():
+        ping_ids = _get_ping_ids_for_report(cfg, "tv")
+        ping_text = build_staff_ping(ping_ids)
+
+    msg = await staff_channel.send(content=ping_text, embed=embed, view=view)
+    db.set_staff_message_id(report_id, msg.id)
+    return report_id
+
+
 # ----------------------------
 # TV Modal
 # ----------------------------
@@ -360,47 +400,48 @@ class TVReportModal(discord.ui.Modal, title="Report TV Issue"):
             "issue": str(self.issue),
         }
 
-        report_id = self.db.create_report(
-            "tv",
-            interaction.user.id,
-            interaction.guild.id,
-            interaction.channel.id,
-            payload,
-        )
-
-        staff_channel = interaction.guild.get_channel(self.cfg.staff_channel_id)
-        if not isinstance(staff_channel, discord.TextChannel):
-            return await interaction.response.send_message("❌ Staff channel not found.", ephemeral=True)
-
-        embed = build_staff_embed(
-            report_id,
-            "tv",
-            interaction.user,
-            interaction.channel,
-            payload,
-            "Open",
-        )
-
-        view = ReportActionView(
-            self.db,
-            self.cfg.staff_channel_id,
-            self.cfg.support_channel_id,
-            self.cfg.public_updates,
-            self.cfg.staff_role_id,
-        )
-
-        ping_text = ""
-        if self.db.get_report_pings_enabled():
-            ping_ids = _get_ping_ids_for_report(self.cfg, "tv")
-            ping_text = build_staff_ping(ping_ids)
-
-        msg = await staff_channel.send(content=ping_text, embed=embed, view=view)
-        self.db.set_staff_message_id(report_id, msg.id)
+        report_id = await _submit_tv_report(interaction, self.db, self.cfg, payload)
 
         await interaction.response.send_message(
             f"✅ Submitted TV report **#{report_id}** for **{payload['channel_name']}**.",
             ephemeral=True,
         )
+
+
+class TVIssueModal(discord.ui.Modal, title="Report TV Issue"):
+    issue = discord.ui.TextInput(label="What’s the issue?", style=discord.TextStyle.paragraph)
+
+    def __init__(self, db: ReportDB, cfg, *, channel_name: str, channel_category: str):
+        super().__init__()
+        self.db = db
+        self.cfg = cfg
+        self.channel_name = str(channel_name).strip()
+        self.channel_category = str(channel_category).strip()
+
+    async def on_submit(self, interaction: discord.Interaction):
+        payload = {
+            "channel_name": self.channel_name,
+            "channel_category": self.channel_category,
+            "issue": str(self.issue),
+        }
+
+        report_id = await _submit_tv_report(interaction, self.db, self.cfg, payload)
+        success_message = (
+            f"✅ Submitted TV report **#{report_id}** for **{payload['channel_name']}**"
+            f" in **{payload['channel_category']}**."
+        )
+
+        try:
+            await interaction.response.edit_message(content=success_message, view=None)
+            return
+        except Exception:
+            pass
+
+        if interaction.response.is_done():
+            await interaction.followup.send(success_message, ephemeral=True)
+            return
+
+        await interaction.response.send_message(success_message, ephemeral=True)
 
 
 # ----------------------------
