@@ -379,6 +379,32 @@ async def _submit_tv_report(interaction: discord.Interaction, db: ReportDB, cfg,
     return report_id
 
 
+async def submit_tv_report_with_feedback(
+    interaction: discord.Interaction,
+    db: ReportDB,
+    cfg,
+    payload: dict,
+) -> int:
+    report_id = await _submit_tv_report(interaction, db, cfg, payload)
+    success_message = (
+        f"✅ Submitted TV report **#{report_id}** for **{payload['channel_name']}**"
+        f" in **{payload['channel_category']}**."
+    )
+
+    try:
+        await interaction.response.edit_message(content=success_message, view=None)
+        return int(report_id)
+    except Exception:
+        pass
+
+    if interaction.response.is_done():
+        await interaction.followup.send(success_message, ephemeral=True)
+        return int(report_id)
+
+    await interaction.response.send_message(success_message, ephemeral=True)
+    return int(report_id)
+
+
 # ----------------------------
 # TV Modal
 # ----------------------------
@@ -400,12 +426,7 @@ class TVReportModal(discord.ui.Modal, title="Report TV Issue"):
             "issue": str(self.issue),
         }
 
-        report_id = await _submit_tv_report(interaction, self.db, self.cfg, payload)
-
-        await interaction.response.send_message(
-            f"✅ Submitted TV report **#{report_id}** for **{payload['channel_name']}**.",
-            ephemeral=True,
-        )
+        await submit_tv_report_with_feedback(interaction, self.db, self.cfg, payload)
 
 
 class TVIssueModal(discord.ui.Modal, title="Report TV Issue"):
@@ -425,23 +446,7 @@ class TVIssueModal(discord.ui.Modal, title="Report TV Issue"):
             "issue": str(self.issue),
         }
 
-        report_id = await _submit_tv_report(interaction, self.db, self.cfg, payload)
-        success_message = (
-            f"✅ Submitted TV report **#{report_id}** for **{payload['channel_name']}**"
-            f" in **{payload['channel_category']}**."
-        )
-
-        try:
-            await interaction.response.edit_message(content=success_message, view=None)
-            return
-        except Exception:
-            pass
-
-        if interaction.response.is_done():
-            await interaction.followup.send(success_message, ephemeral=True)
-            return
-
-        await interaction.response.send_message(success_message, ephemeral=True)
+        await submit_tv_report_with_feedback(interaction, self.db, self.cfg, payload)
 
 
 # ----------------------------

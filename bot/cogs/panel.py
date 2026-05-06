@@ -14,6 +14,35 @@ from bot.iptv import (
 
 
 PAGE_SIZE = 25
+COMMON_TV_ISSUES = [
+    ("Channel offline", "__offline__"),
+    ("Buffering or freezing", "__buffering__"),
+    ("Wrong content", "Wrong channel / wrong content"),
+    ("No audio", "No audio"),
+    ("Black screen / no video", "No video / black screen"),
+    ("Audio out of sync", "Audio / video de-sync"),
+    ("Guide / EPG issue", "EPG / guide issue"),
+    ("Something else", "__other__"),
+]
+FOLLOW_UP_TV_ISSUES = {
+    "__offline__": {
+        "title": "What best describes the offline issue?",
+        "options": [
+            ("Won’t open", "Channel offline / not loading"),
+            ("Shows an error immediately", "Channel offline / playback error on start"),
+            ("Stuck on loading", "Channel offline / stuck loading"),
+        ],
+    },
+    "__buffering__": {
+        "title": "What best describes the buffering issue?",
+        "options": [
+            ("Constant buffering", "Buffering / freezing constantly"),
+            ("Starts then freezes", "Starts playing then freezes"),
+            ("Poor quality or unstable", "Buffering / unstable stream quality"),
+            ("Only during live events", "Buffering during live events"),
+        ],
+    },
+}
 
 
 def _iso_to_discord_ts(iso: str) -> str:
@@ -263,6 +292,148 @@ class _TVChannelSelect(discord.ui.Select):
         await self.view.handle_channel_selection(interaction, self.values[0])
 
 
+class _TVIssueOptionSelect(discord.ui.Select):
+    def __init__(self, options_source: list[tuple[str, str]], *, placeholder: str):
+        options = [
+            discord.SelectOption(label=label, value=value)
+            for label, value in options_source
+        ]
+        super().__init__(
+            placeholder=placeholder,
+            min_values=1,
+            max_values=1,
+            options=options,
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        await self.view.handle_issue_selection(interaction, self.values[0])
+
+
+class _TVIssueChoiceView(discord.ui.View):
+    def __init__(self, db, cfg, *, channel_name: str, channel_category: str):
+        super().__init__(timeout=300)
+        self.db = db
+        self.cfg = cfg
+        self.channel_name = str(channel_name).strip()
+        self.channel_category = str(channel_category).strip()
+        self.add_item(_TVIssueOptionSelect(COMMON_TV_ISSUES, placeholder="Choose the issue"))
+
+    async def handle_issue_selection(self, interaction: discord.Interaction, issue_value: str):
+        from bot.modals import TVIssueModal, submit_tv_report_with_feedback
+
+        follow_up = FOLLOW_UP_TV_ISSUES.get(issue_value)
+        if follow_up is not None:
+            await interaction.response.edit_message(
+                content=(
+                    f"{follow_up['title']} for **{self.channel_name}**"
+                    f" in **{self.channel_category}**."
+                ),
+                view=_TVIssueFollowupView(
+                    self.db,
+                    self.cfg,
+                    channel_name=self.channel_name,
+                    channel_category=self.channel_category,
+                    parent_issue=issue_value,
+                ),
+            )
+            return
+
+        if issue_value == "__other__":
+            await interaction.response.send_modal(
+                TVIssueModal(
+                    self.db,
+                    self.cfg,
+                    channel_name=self.channel_name,
+                    channel_category=self.channel_category,
+                )
+            )
+            return
+
+        payload = {
+            "channel_name": self.channel_name,
+            "channel_category": self.channel_category,
+            "issue": issue_value,
+        }
+        await submit_tv_report_with_feedback(interaction, self.db, self.cfg, payload)
+
+    @discord.ui.button(label="Other / Explain", style=discord.ButtonStyle.secondary, row=1)
+    async def other_issue(self, interaction: discord.Interaction, button: discord.ui.Button):
+        del button
+        from bot.modals import TVIssueModal
+
+        await interaction.response.send_modal(
+            TVIssueModal(
+                self.db,
+                self.cfg,
+                channel_name=self.channel_name,
+                channel_category=self.channel_category,
+            )
+        )
+
+
+class _TVIssueFollowupView(discord.ui.View):
+    def __init__(self, db, cfg, *, channel_name: str, channel_category: str, parent_issue: str):
+        super().__init__(timeout=300)
+        self.db = db
+        self.cfg = cfg
+        self.channel_name = str(channel_name).strip()
+        self.channel_category = str(channel_category).strip()
+        self.parent_issue = str(parent_issue).strip()
+        follow_up = FOLLOW_UP_TV_ISSUES[self.parent_issue]
+        self.add_item(_TVIssueOptionSelect(follow_up["options"], placeholder=follow_up["title"]))
+
+    async def handle_issue_selection(self, interaction: discord.Interaction, issue_value: str):
+        from bot.modals import TVIssueModal, submit_tv_report_with_feedback
+
+        if issue_value == "__other__":
+            await interaction.response.send_modal(
+                TVIssueModal(
+                    self.db,
+                    self.cfg,
+                    channel_name=self.channel_name,
+                    channel_category=self.channel_category,
+                )
+            )
+            return
+
+        payload = {
+            "channel_name": self.channel_name,
+            "channel_category": self.channel_category,
+            "issue": issue_value,
+        }
+        await submit_tv_report_with_feedback(interaction, self.db, self.cfg, payload)
+
+    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, row=1)
+    async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
+        del button
+        await interaction.response.edit_message(
+            content=(
+                f"Choose the issue for **{self.channel_name}**"
+                f" in **{self.channel_category}**."
+            ),
+            view=_TVIssueChoiceView(
+                self.db,
+                self.cfg,
+                channel_name=self.channel_name,
+                channel_category=self.channel_category,
+            ),
+        )
+
+    @discord.ui.button(label="Other / Explain", style=discord.ButtonStyle.secondary, row=1)
+    async def other_issue(self, interaction: discord.Interaction, button: discord.ui.Button):
+        del button
+        from bot.modals import TVIssueModal
+
+        await interaction.response.send_modal(
+            TVIssueModal(
+                self.db,
+                self.cfg,
+                channel_name=self.channel_name,
+                channel_category=self.channel_category,
+            )
+        )
+
+
 def _all_channels_for_category(category_name: str) -> list[dict]:
     category = find_selector_category(category_name)
     return [channel for channel in (category or {}).get("channels", []) if isinstance(channel, dict)]
@@ -327,8 +498,6 @@ class _TVChannelResultsView(discord.ui.View):
         await interaction.response.send_modal(TVReportModal(self.db, self.cfg))
 
     async def handle_channel_selection(self, interaction: discord.Interaction, selector_key: str):
-        from bot.modals import TVIssueModal
-
         selected = find_selector_channel(selector_key, category_name=self.category_name)
         if not selected:
             return await interaction.response.send_message(
@@ -337,13 +506,17 @@ class _TVChannelResultsView(discord.ui.View):
                 ephemeral=True,
             )
 
-        await interaction.response.send_modal(
-            TVIssueModal(
+        await interaction.response.edit_message(
+            content=(
+                f"Choose the issue for **{str(selected.get('name') or 'Unknown')}**"
+                f" in **{str(selected.get('category') or self.category_name)}**."
+            ),
+            view=_TVIssueChoiceView(
                 self.db,
                 self.cfg,
                 channel_name=str(selected.get("name") or "Unknown"),
                 channel_category=str(selected.get("category") or self.category_name),
-            )
+            ),
         )
 
 
@@ -360,8 +533,6 @@ class _TVGlobalChannelResultsView(discord.ui.View):
         self.next_page.disabled = self.page >= (_page_count(self.matches) - 1)
 
     async def handle_channel_selection(self, interaction: discord.Interaction, selector_key: str):
-        from bot.modals import TVIssueModal
-
         selected = find_selector_channel(selector_key)
         if not selected:
             return await interaction.response.send_message(
@@ -370,13 +541,17 @@ class _TVGlobalChannelResultsView(discord.ui.View):
                 ephemeral=True,
             )
 
-        await interaction.response.send_modal(
-            TVIssueModal(
+        await interaction.response.edit_message(
+            content=(
+                f"Choose the issue for **{str(selected.get('name') or 'Unknown')}**"
+                f" in **{str(selected.get('category') or 'Unknown')}**."
+            ),
+            view=_TVIssueChoiceView(
                 self.db,
                 self.cfg,
                 channel_name=str(selected.get("name") or "Unknown"),
                 channel_category=str(selected.get("category") or "Unknown"),
-            )
+            ),
         )
 
     @discord.ui.button(label="Previous", style=discord.ButtonStyle.secondary, row=1)
