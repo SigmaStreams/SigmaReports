@@ -177,18 +177,32 @@ That bind-mounts the full repo into the container so the scripts, playlist file,
 
 ### Bring Your Own M3U
 
-If your playlist file is named `channels.m3u` and lives in the repo root:
+If your playlist file is named `channels.m3u` and lives in the repo root, you can build the datasets locally with:
 
 ```bash
 ./.venv/bin/python scripts/build_iptv_json.py
 ./.venv/bin/python scripts/build_iptv_selector_json.py
 ```
 
-If the playlist lives elsewhere:
+If you want to do the same thing inside Docker instead:
+
+```bash
+docker compose run --rm --volume "$PWD:/app" --workdir /app reports-bot python scripts/build_iptv_json.py
+docker compose run --rm --volume "$PWD:/app" --workdir /app reports-bot python scripts/build_iptv_selector_json.py
+```
+
+If the playlist lives elsewhere, build it locally with:
 
 ```bash
 ./.venv/bin/python scripts/build_iptv_json.py --input /path/to/playlist.m3u --output data/iptv_channels.json
 ./.venv/bin/python scripts/build_iptv_selector_json.py --input data/iptv_channels.json --output data/iptv_channels_selector.json
+```
+
+Or inside Docker with:
+
+```bash
+docker compose run --rm --volume "$PWD:/app" --workdir /app reports-bot python scripts/build_iptv_json.py --input /app/path/to/playlist.m3u --output data/iptv_channels.json
+docker compose run --rm --volume "$PWD:/app" --workdir /app reports-bot python scripts/build_iptv_selector_json.py --input data/iptv_channels.json --output data/iptv_channels_selector.json
 ```
 
 ## Command Summary
