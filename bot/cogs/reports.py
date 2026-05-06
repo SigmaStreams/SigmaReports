@@ -3,7 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 from datetime import datetime, timezone
 
-from bot.modals import TVReportModal, VODTypePickerView
+from bot.modals import TVReportModal, VODQuestionnaireView
 from bot.views import ReportActionView
 from bot.utils import build_staff_embed, report_subject
 
@@ -220,8 +220,8 @@ class Reports(commands.Cog):
             return
 
         await interaction.response.send_message(
-            "Is this a **TV show** or a **movie**?",
-            view=VODTypePickerView(self.db, self.cfg),
+            "English or Foreign?",
+            view=VODQuestionnaireView(self.db, self.cfg, interaction.user.id),
             ephemeral=True,
         )
 

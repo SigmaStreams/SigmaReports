@@ -250,6 +250,95 @@ def _is_tmdb_movie_link(url: str) -> bool:
     return path.startswith("movie/") and len(path.split("/", 1)[-1].strip()) > 0
 
 
+def _normalize_vod_language(value: str) -> str:
+    normalized = (value or "").strip().lower()
+    if normalized == "english":
+        return "English"
+    if normalized == "foreign":
+        return "Foreign"
+    return "Unknown"
+
+
+def _normalize_vod_4k(value: str) -> str:
+    normalized = (value or "").strip().lower()
+    if normalized in ("yes", "true", "4k"):
+        return "Yes"
+    if normalized in ("no", "false", "fhd", "non-4k"):
+        return "No"
+    return "Unknown"
+
+
+def _normalize_vod_content_type(value: str) -> str:
+    normalized = (value or "").strip().lower()
+    if normalized in ("movie", "movies"):
+        return "movie"
+    if normalized in ("tv", "tv show", "tv shows", "show"):
+        return "tv"
+    return "unknown"
+
+
+def _validate_vod_reference_link(content_type: str, url: str) -> str | None:
+    normalized_type = _normalize_vod_content_type(content_type)
+    if normalized_type == "movie" and not _is_tmdb_movie_link(url):
+        return (
+            "❌ That reference link isn’t valid for a **movie**.\n\n"
+            "Please re-submit using a **TMDB movie** link like:\n"
+            "• <https://www.themoviedb.org/movie/14161-2012>"
+        )
+
+    if normalized_type == "tv" and not _is_tvdb_series_link(url):
+        return (
+            "❌ That reference link isn’t valid for a **TV show**.\n\n"
+            "Please re-submit using a **TheTVDB series** link like:\n"
+            "• <https://www.thetvdb.com/series/smallville>"
+        )
+
+    if normalized_type not in ("movie", "tv"):
+        return "❌ Select whether this is a movie or TV show before continuing."
+
+    return None
+
+
+async def _submit_vod_report(interaction: discord.Interaction, db: ReportDB, cfg, payload: dict) -> int:
+    report_id = db.create_report(
+        "vod",
+        interaction.user.id,
+        interaction.guild.id,
+        interaction.channel.id,
+        payload,
+    )
+
+    staff_channel = interaction.guild.get_channel(cfg.staff_channel_id)
+    if not isinstance(staff_channel, discord.TextChannel):
+        return await interaction.response.send_message("❌ Staff channel not found.", ephemeral=True)
+
+    embed = build_staff_embed(
+        report_id,
+        "vod",
+        interaction.user,
+        interaction.channel,
+        payload,
+        "Open",
+    )
+
+    view = ReportActionView(
+        db,
+        cfg.staff_channel_id,
+        cfg.support_channel_id,
+        cfg.public_updates,
+        cfg.staff_role_id,
+    )
+
+    ping_text = ""
+    if db.get_report_pings_enabled():
+        ping_ids = _get_ping_ids_for_report(cfg, "vod")
+        ping_text = build_staff_ping(ping_ids)
+
+    msg = await staff_channel.send(content=ping_text, embed=embed, view=view)
+    db.set_staff_message_id(report_id, msg.id)
+    return report_id
+
+
 # ----------------------------
 # TV Modal
 # ----------------------------
@@ -315,194 +404,273 @@ class TVReportModal(discord.ui.Modal, title="Report TV Issue"):
 
 
 # ----------------------------
-# VOD Modals (TV Show vs Movie)
+# VOD one-question-at-a-time flow
 # ----------------------------
 
-class VODTVShowReportModal(discord.ui.Modal, title="Report TV Show Issue"):
-    title_name = discord.ui.TextInput(
-        label="Show + season/episode (e.g. S02E03)",
-        max_length=150,
-        placeholder="Example: Family Guy S02E03",
-    )
+def _new_vod_state() -> dict:
+    return {
+        "title": "",
+        "language": "",
+        "reference_link": "",
+        "is_4k": "",
+        "content_type": "",
+        "issue": "",
+    }
 
-    reference_link = discord.ui.TextInput(
-        label="TVDB series link only",
-        max_length=300,
-        placeholder="Example: https://www.thetvdb.com/series/family-guy",
-    )
 
-    quality = discord.ui.TextInput(label="Quality (FHD or 4K)", max_length=10)
-    issue = discord.ui.TextInput(label="What’s the issue?", style=discord.TextStyle.paragraph)
+def _vod_title_placeholder() -> str:
+    return "Example: 2012 or Family Guy S02E03"
 
-    def __init__(self, db: ReportDB, cfg):
+
+def _vod_reference_placeholder(content_type: str) -> str:
+    normalized_type = _normalize_vod_content_type(content_type)
+    if normalized_type == "tv":
+        return "Example: https://www.thetvdb.com/series/family-guy"
+    if normalized_type == "movie":
+        return "Example: https://www.themoviedb.org/movie/14161-2012"
+    return "Example: TMDB movie or TVDB series link"
+
+
+class _VODStepView(discord.ui.View):
+    def __init__(self, db: ReportDB, cfg, requester_id: int, state: dict):
+        super().__init__(timeout=180)
+        self.db = db
+        self.cfg = cfg
+        self.requester_id = int(requester_id)
+        self.state = dict(state)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id == self.requester_id:
+            return True
+
+        await interaction.response.send_message(
+            "❌ Only the user who opened this VOD form can use it.",
+            ephemeral=True,
+        )
+        return False
+
+    async def on_timeout(self):
+        for child in self.children:
+            child.disabled = True
+
+
+class _VODCombinedTextModal(discord.ui.Modal, title="VOD Text Questions"):
+    def __init__(self, db: ReportDB, cfg, requester_id: int, state: dict, launcher_interaction: discord.Interaction):
         super().__init__()
         self.db = db
         self.cfg = cfg
+        self.requester_id = int(requester_id)
+        self.state = dict(state)
+        self.launcher_interaction = launcher_interaction
+
+        self.title_name = discord.ui.TextInput(
+            label="Movie or TV show name",
+            placeholder=_vod_title_placeholder(),
+            max_length=150,
+            default=(self.state.get("title") or None),
+        )
+        self.reference_link = discord.ui.TextInput(
+            label="TMDB or TVDB link",
+            placeholder=_vod_reference_placeholder(self.state.get("content_type") or ""),
+            max_length=300,
+            default=(self.state.get("reference_link") or None),
+        )
+        self.issue = discord.ui.TextInput(
+            label="What is the issue?",
+            placeholder="Please include as much detail as possible.",
+            max_length=1000,
+            style=discord.TextStyle.paragraph,
+            default=(self.state.get("issue") or None),
+        )
+
+        self.add_item(self.title_name)
+        self.add_item(self.reference_link)
+        self.add_item(self.issue)
 
     async def on_submit(self, interaction: discord.Interaction):
-        q = str(self.quality).upper()
-        if q not in ("FHD", "4K"):
-            q = "Unknown"
+        self.state["title"] = str(self.title_name).strip()
+        self.state["reference_link"] = str(self.reference_link).strip()
+        self.state["issue"] = str(self.issue).strip()
 
-        ref = str(self.reference_link).strip()
-        if not _is_tvdb_series_link(ref):
+        link_error = _validate_vod_reference_link(self.state["content_type"], self.state["reference_link"])
+        if link_error:
+            await interaction.response.defer(ephemeral=True)
+            await self.launcher_interaction.edit_original_response(
+                content=(
+                    f"{link_error}\n\n"
+                    "Click Continue to review and finish your report."
+                ),
+                view=_VODReviewTextQuestionsView(self.db, self.cfg, self.requester_id, self.state),
+            )
+            return
+
+        payload = {
+            "title": self.state["title"],
+            "language": self.state["language"],
+            "reference_link": self.state["reference_link"],
+            "is_4k": self.state["is_4k"],
+            "content_type": self.state["content_type"],
+            "quality": "4K" if self.state["is_4k"] == "Yes" else "Non-4K",
+            "issue": self.state["issue"],
+        }
+        report_id = await _submit_vod_report(interaction, self.db, self.cfg, payload)
+        await interaction.response.edit_message(
+            content=f"✅ Submitted VOD report **#{report_id}** for **{payload['title']}**.",
+            view=None,
+        )
+
+
+class _VODOpenModalButton(discord.ui.Button):
+    def __init__(self, *, label: str, custom_id: str):
+        super().__init__(label=label, style=discord.ButtonStyle.primary, emoji="📝", custom_id=custom_id)
+
+    async def callback(self, interaction: discord.Interaction):
+        await self.view.open_modal(interaction)
+
+
+class _VODTextQuestionView(_VODStepView):
+    def __init__(
+        self,
+        db: ReportDB,
+        cfg,
+        requester_id: int,
+        state: dict,
+        *,
+        button_label: str,
+    ):
+        super().__init__(db, cfg, requester_id, state)
+        self.button_label = button_label
+        self.modal_open = False
+        self.add_item(_VODOpenModalButton(label=button_label, custom_id="vodstep:textquestions"))
+
+    async def open_modal(self, interaction: discord.Interaction):
+        if self.modal_open:
             return await interaction.response.send_message(
-                "❌ That reference link isn’t valid for a **TV show**.\n\n"
-                "Please re-submit using a **TheTVDB series** link like:\n"
-                "• <https://www.thetvdb.com/series/smallville>",
+                "❌ This report form is already in progress. Finish the open modal.",
                 ephemeral=True,
             )
 
-        payload = {
-            "content_type": "tv",
-            "title": str(self.title_name),
-            "reference_link": ref,
-            "quality": q,
-            "issue": str(self.issue),
-        }
-
-        report_id = self.db.create_report(
-            "vod",
-            interaction.user.id,
-            interaction.guild.id,
-            interaction.channel.id,
-            payload,
-        )
-
-        staff_channel = interaction.guild.get_channel(self.cfg.staff_channel_id)
-        if not isinstance(staff_channel, discord.TextChannel):
-            return await interaction.response.send_message("❌ Staff channel not found.", ephemeral=True)
-
-        embed = build_staff_embed(
-            report_id,
-            "vod",
-            interaction.user,
-            interaction.channel,
-            payload,
-            "Open",
-        )
-
-        view = ReportActionView(
-            self.db,
-            self.cfg.staff_channel_id,
-            self.cfg.support_channel_id,
-            self.cfg.public_updates,
-            self.cfg.staff_role_id,
-        )
-
-        ping_text = ""
-        if self.db.get_report_pings_enabled():
-            ping_ids = _get_ping_ids_for_report(self.cfg, "vod")
-            ping_text = build_staff_ping(ping_ids)
-
-        msg = await staff_channel.send(content=ping_text, embed=embed, view=view)
-        self.db.set_staff_message_id(report_id, msg.id)
-
-        await interaction.response.send_message(
-            f"✅ Submitted TV show report **#{report_id}** for **{payload['title']}** ({q}).",
-            ephemeral=True,
-        )
-
-
-class VODMovieReportModal(discord.ui.Modal, title="Report Movie Issue"):
-    title_name = discord.ui.TextInput(
-        label="Movie name",
-        max_length=150,
-        placeholder="Example: 2012",
-    )
-
-    reference_link = discord.ui.TextInput(
-        label="TMDB movie link only",
-        max_length=300,
-        placeholder="Example: https://www.themoviedb.org/movie/14161-2012",
-    )
-
-    quality = discord.ui.TextInput(label="Quality (FHD or 4K)", max_length=10)
-    issue = discord.ui.TextInput(label="What’s the issue?", style=discord.TextStyle.paragraph)
-
-    def __init__(self, db: ReportDB, cfg):
-        super().__init__()
-        self.db = db
-        self.cfg = cfg
-
-    async def on_submit(self, interaction: discord.Interaction):
-        q = str(self.quality).upper()
-        if q not in ("FHD", "4K"):
-            q = "Unknown"
-
-        ref = str(self.reference_link).strip()
-        if not _is_tmdb_movie_link(ref):
-            return await interaction.response.send_message(
-                "❌ That reference link isn’t valid for a **movie**.\n\n"
-                "Please re-submit using a **TMDB movie** link like:\n"
-                "• <https://www.themoviedb.org/movie/14161-2012>",
-                ephemeral=True,
+        self.modal_open = True
+        try:
+            await interaction.response.send_modal(
+                _VODCombinedTextModal(
+                    self.db,
+                    self.cfg,
+                    self.requester_id,
+                    self.state,
+                    interaction,
+                )
             )
+        except Exception:
+            self.modal_open = False
+            raise
 
-        payload = {
-            "content_type": "movie",
-            "title": str(self.title_name),
-            "reference_link": ref,
-            "quality": q,
-            "issue": str(self.issue),
-        }
 
-        report_id = self.db.create_report(
-            "vod",
-            interaction.user.id,
-            interaction.guild.id,
-            interaction.channel.id,
-            payload,
-        )
-
-        staff_channel = interaction.guild.get_channel(self.cfg.staff_channel_id)
-        if not isinstance(staff_channel, discord.TextChannel):
-            return await interaction.response.send_message("❌ Staff channel not found.", ephemeral=True)
-
-        embed = build_staff_embed(
-            report_id,
-            "vod",
-            interaction.user,
-            interaction.channel,
-            payload,
-            "Open",
-        )
-
-        view = ReportActionView(
-            self.db,
-            self.cfg.staff_channel_id,
-            self.cfg.support_channel_id,
-            self.cfg.public_updates,
-            self.cfg.staff_role_id,
-        )
-
-        ping_text = ""
-        if self.db.get_report_pings_enabled():
-            ping_ids = _get_ping_ids_for_report(self.cfg, "vod")
-            ping_text = build_staff_ping(ping_ids)
-
-        msg = await staff_channel.send(content=ping_text, embed=embed, view=view)
-        self.db.set_staff_message_id(report_id, msg.id)
-
-        await interaction.response.send_message(
-            f"✅ Submitted movie report **#{report_id}** for **{payload['title']}** ({q}).",
-            ephemeral=True,
+class _VODTitleQuestionView(_VODTextQuestionView):
+    def __init__(self, db: ReportDB, cfg, requester_id: int, state: dict):
+        super().__init__(
+            db,
+            cfg,
+            requester_id,
+            state,
+            button_label="Continue",
         )
 
 
-class VODTypePickerView(discord.ui.View):
-    def __init__(self, db: ReportDB, cfg):
-        super().__init__(timeout=60)
-        self.db = db
-        self.cfg = cfg
+class _VODReviewTextQuestionsView(_VODTextQuestionView):
+    def __init__(self, db: ReportDB, cfg, requester_id: int, state: dict):
+        super().__init__(
+            db,
+            cfg,
+            requester_id,
+            state,
+            button_label="Continue",
+        )
 
-    @discord.ui.button(label="TV Show", style=discord.ButtonStyle.primary, emoji="📺", custom_id="vodpicker:tvshow")
-    async def pick_tvshow(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(VODTVShowReportModal(self.db, self.cfg))
 
-    @discord.ui.button(label="Movie", style=discord.ButtonStyle.secondary, emoji="🎬", custom_id="vodpicker:movie")
-    async def pick_movie(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(VODMovieReportModal(self.db, self.cfg))
+class _VODSelect(discord.ui.Select):
+    def __init__(self, *, placeholder: str, options: list[discord.SelectOption], custom_id: str):
+        super().__init__(
+            placeholder=placeholder,
+            min_values=1,
+            max_values=1,
+            options=options,
+            custom_id=custom_id,
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        await self.view.handle_selection(interaction, self.values[0])
+
+
+class _VODLanguageQuestionView(_VODStepView):
+    def __init__(self, db: ReportDB, cfg, requester_id: int, state: dict):
+        super().__init__(db, cfg, requester_id, state)
+        self.add_item(
+            _VODSelect(
+                placeholder="English or Foreign?",
+                options=[
+                    discord.SelectOption(label="English", value="English"),
+                    discord.SelectOption(label="Foreign", value="Foreign"),
+                ],
+                custom_id="vodstep:language",
+            )
+        )
+
+    async def handle_selection(self, interaction: discord.Interaction, value: str):
+        self.state["language"] = _normalize_vod_language(value)
+        await interaction.response.edit_message(
+            content="Is this a 4K title?",
+            view=_VOD4KQuestionView(self.db, self.cfg, self.requester_id, self.state),
+        )
+
+
+class _VOD4KQuestionView(_VODStepView):
+    def __init__(self, db: ReportDB, cfg, requester_id: int, state: dict):
+        super().__init__(db, cfg, requester_id, state)
+        self.add_item(
+            _VODSelect(
+                placeholder="Is this a 4K title?",
+                options=[
+                    discord.SelectOption(label="Yes", value="Yes"),
+                    discord.SelectOption(label="No", value="No"),
+                ],
+                custom_id="vodstep:4k",
+            )
+        )
+
+    async def handle_selection(self, interaction: discord.Interaction, value: str):
+        self.state["is_4k"] = _normalize_vod_4k(value)
+        await interaction.response.edit_message(
+            content="Is this a movie, or TV show?",
+            view=_VODContentTypeQuestionView(self.db, self.cfg, self.requester_id, self.state),
+        )
+
+
+class _VODContentTypeQuestionView(_VODStepView):
+    def __init__(self, db: ReportDB, cfg, requester_id: int, state: dict):
+        super().__init__(db, cfg, requester_id, state)
+        self.add_item(
+            _VODSelect(
+                placeholder="Is this a movie, or TV show?",
+                options=[
+                    discord.SelectOption(label="Movie", value="movie"),
+                    discord.SelectOption(label="TV Show", value="tv"),
+                ],
+                custom_id="vodstep:type",
+            )
+        )
+
+    async def handle_selection(self, interaction: discord.Interaction, value: str):
+        self.state["content_type"] = _normalize_vod_content_type(value)
+        await interaction.response.edit_message(
+            content="Click Continue to finish your report.",
+            view=_VODTitleQuestionView(self.db, self.cfg, self.requester_id, self.state),
+        )
+
+
+class VODQuestionnaireView(_VODLanguageQuestionView):
+    def __init__(self, db: ReportDB, cfg, requester_id: int):
+        super().__init__(db, cfg, requester_id, _new_vod_state())
 
 
 # ----------------------------

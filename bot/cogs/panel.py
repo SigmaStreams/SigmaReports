@@ -84,13 +84,12 @@ class ReportPanelView(discord.ui.View):
         if not await self._block_gate(interaction):
             return
 
-        # Swap modal -> picker view step
         # Lazy import avoids circular imports
-        from bot.modals import VODTypePickerView
+        from bot.modals import VODQuestionnaireView
 
         await interaction.response.send_message(
-            "What are you reporting?",
-            view=VODTypePickerView(self.db, self.cfg),
+            "English or Foreign?",
+            view=VODQuestionnaireView(self.db, self.cfg, interaction.user.id),
             ephemeral=True,
         )
 
