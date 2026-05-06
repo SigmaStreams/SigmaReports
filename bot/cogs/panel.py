@@ -9,6 +9,7 @@ from bot.iptv import (
     search_all_selector_channels,
     search_selector_categories,
     search_selector_channels,
+    selector_dataset_available,
     selector_categories,
 )
 
@@ -45,6 +46,16 @@ FOLLOW_UP_TV_ISSUES = {
 }
 
 
+def _tv_selector_enabled() -> bool:
+    return selector_dataset_available()
+
+
+def _tv_selector_entry_message() -> str:
+    if _tv_selector_enabled():
+        return "Search for the channel directly, browse by category if needed, or fall back to manual entry."
+    return "IPTV channel lists are not configured on this deployment. Use manual entry to submit a Live TV report."
+
+
 def _iso_to_discord_ts(iso: str) -> str:
     try:
         dt = datetime.fromisoformat(iso)
@@ -70,18 +81,38 @@ class _TVSelectorEntryView(discord.ui.View):
         super().__init__(timeout=300)
         self.db = db
         self.cfg = cfg
+        if not _tv_selector_enabled():
+            self.remove_item(self.search_channel)
+            self.remove_item(self.browse_category)
 
     @discord.ui.button(label="Search Channel", style=discord.ButtonStyle.primary)
     async def search_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
         del button
+        if not _tv_selector_enabled():
+            from bot.modals import TVReportModal
+
+            return await interaction.response.send_modal(TVReportModal(self.db, self.cfg))
         await interaction.response.send_modal(_TVGlobalChannelSearchModal(self.db, self.cfg))
 
     @discord.ui.button(label="Browse by Category", style=discord.ButtonStyle.secondary)
     async def browse_category(self, interaction: discord.Interaction, button: discord.ui.Button):
         del button
+        if not _tv_selector_enabled():
+            return await interaction.response.edit_message(
+                content=_tv_selector_entry_message(),
+                view=_TVSelectorEntryView(self.db, self.cfg),
+            )
+
+        categories = selector_categories()
+        if not categories:
+            return await interaction.response.edit_message(
+                content=_tv_selector_entry_message(),
+                view=_TVSelectorEntryView(self.db, self.cfg),
+            )
+
         await interaction.response.edit_message(
             content="Choose a category from the dropdown, use Previous/Next for more results, or use Search Categories if you want to look something up.",
-            view=_TVCategoryResultsView(self.db, self.cfg, selector_categories()),
+            view=_TVCategoryResultsView(self.db, self.cfg, categories),
         )
 
     @discord.ui.button(label="Manual Entry", style=discord.ButtonStyle.secondary)
@@ -111,7 +142,7 @@ class _TVCategorySearchModal(discord.ui.Modal, title="Find TV Category"):
         if not matches:
             return await interaction.response.send_message(
                 "No IPTV categories matched that search. Try a broader term or use manual entry.",
-                view=_TVCategoryResultsView(self.db, self.cfg, selector_categories()),
+                view=_TVSelectorEntryView(self.db, self.cfg),
                 ephemeral=True,
             )
 
@@ -199,7 +230,7 @@ class _TVCategoryResultsView(discord.ui.View):
         if not channels:
             return await interaction.response.send_message(
                 f"No channels are available in **{category_name}** right now. Try a different category or use manual entry.",
-                view=_TVCategoryResultsView(self.db, self.cfg, selector_categories()),
+                view=_TVSelectorEntryView(self.db, self.cfg),
                 ephemeral=True,
             )
 
@@ -576,9 +607,16 @@ class _TVGlobalChannelResultsView(discord.ui.View):
     @discord.ui.button(label="Browse by Category", style=discord.ButtonStyle.secondary, row=1)
     async def browse_category(self, interaction: discord.Interaction, button: discord.ui.Button):
         del button
+        categories = selector_categories()
+        if not categories:
+            return await interaction.response.edit_message(
+                content=_tv_selector_entry_message(),
+                view=_TVSelectorEntryView(self.db, self.cfg),
+            )
+
         await interaction.response.edit_message(
             content="Choose a category from the dropdown, use Previous/Next for more results, or use Search Categories if you want to look something up.",
-            view=_TVCategoryResultsView(self.db, self.cfg, selector_categories()),
+            view=_TVCategoryResultsView(self.db, self.cfg, categories),
         )
 
     @discord.ui.button(label="Manual Entry", style=discord.ButtonStyle.secondary, row=2)
@@ -645,7 +683,7 @@ class ReportPanelView(discord.ui.View):
             return
 
         await interaction.response.send_message(
-            "Search for the channel directly, browse by category if needed, or fall back to manual entry.",
+            _tv_selector_entry_message(),
             view=_TVSelectorEntryView(self.db, self.cfg),
             ephemeral=True,
         )

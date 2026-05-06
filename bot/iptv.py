@@ -14,6 +14,23 @@ DEFAULT_IPTV_EXPORT_PATH = _REPO_ROOT / "data" / "iptv_channels.json"
 DEFAULT_SELECTOR_DATASET_PATH = _REPO_ROOT / "data" / "iptv_channels_selector.json"
 
 
+def _empty_selector_dataset() -> dict[str, Any]:
+    return {
+        "source_file": "",
+        "generated_at": "",
+        "selector_generated_at": "",
+        "category_count": 0,
+        "channel_count": 0,
+        "stats": {
+            "input_channels": 0,
+            "skipped_empty": 0,
+            "skipped_malformed": 0,
+            "deduplicated": 0,
+        },
+        "categories": [],
+    }
+
+
 def load_iptv_export(path: str | Path) -> dict[str, Any]:
     export_path = Path(path)
     payload = json.loads(export_path.read_text(encoding="utf-8"))
@@ -119,8 +136,20 @@ def write_selector_dataset(
 
 def load_selector_dataset(path: str | Path = DEFAULT_SELECTOR_DATASET_PATH) -> dict[str, Any]:
     dataset_path = Path(path)
-    stat = dataset_path.stat()
-    return _load_selector_dataset_cached(str(dataset_path.resolve()), stat.st_mtime_ns)
+    if not dataset_path.exists():
+        return _empty_selector_dataset()
+    try:
+        stat = dataset_path.stat()
+        return _load_selector_dataset_cached(str(dataset_path.resolve()), stat.st_mtime_ns)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return _empty_selector_dataset()
+
+
+def selector_dataset_available(path: str | Path = DEFAULT_SELECTOR_DATASET_PATH) -> bool:
+    try:
+        return bool(selector_categories(path))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return False
 
 
 def selector_categories(path: str | Path = DEFAULT_SELECTOR_DATASET_PATH) -> list[dict[str, Any]]:

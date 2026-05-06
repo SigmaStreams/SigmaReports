@@ -87,6 +87,8 @@ docker compose up -d --build
 
 The TV report flow can use local IPTV datasets derived from your IPTV M3U playlist.
 
+These files are optional. If you do not generate them for a deployment, Live TV reports still work, but users will fall back to manual channel/category entry instead of searchable IPTV selectors.
+
 - `data/iptv_channels.json` is the raw parsed playlist export.
 - `data/iptv_channels_selector.json` is the selector-friendly derivative used for category and channel lookup.
 
@@ -115,4 +117,4 @@ If your playlist file has a different name or lives somewhere else, pass it expl
 ./.venv/bin/python scripts/build_iptv_selector_json.py --input data/iptv_channels.json --output data/iptv_channels_selector.json
 ```
 
-The panel-driven TV report flow reads `data/iptv_channels_selector.json`, so that selector dataset needs to be generated before the bot starts.
+When present, the panel-driven TV report flow reads `data/iptv_channels_selector.json` to power category and channel selectors.
