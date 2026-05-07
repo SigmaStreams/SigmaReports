@@ -52,7 +52,11 @@ def _tv_selector_enabled() -> bool:
 
 def _tv_selector_entry_message() -> str:
     if _tv_selector_enabled():
-        return "Search for the channel directly, browse by category if needed, or fall back to manual entry."
+        return (
+            "**Recommended:** start with **Search Channel** to find the channel fastest.\n"
+            "If you are not sure of the channel name, use **Browse by Category**.\n"
+            "If you still need the manual fallback, use **/report-tv**."
+        )
     return "IPTV channel lists are not configured on this deployment. Use manual entry to submit a Live TV report."
 
 
@@ -76,6 +80,11 @@ def _page_count(items: list[dict]) -> int:
     return max(1, (len(items) + PAGE_SIZE - 1) // PAGE_SIZE)
 
 
+def _page_indicator(items: list[dict], page: int) -> str:
+    total_pages = _page_count(items)
+    return f"Page **{page + 1} of {total_pages}**"
+
+
 class _TVSelectorEntryView(discord.ui.View):
     def __init__(self, db, cfg):
         super().__init__(timeout=300)
@@ -85,7 +94,7 @@ class _TVSelectorEntryView(discord.ui.View):
             self.remove_item(self.search_channel)
             self.remove_item(self.browse_category)
 
-    @discord.ui.button(label="Search Channel", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="Search Channel (Recommended)", style=discord.ButtonStyle.primary)
     async def search_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
         del button
         if not _tv_selector_enabled():
@@ -111,17 +120,9 @@ class _TVSelectorEntryView(discord.ui.View):
             )
 
         await interaction.response.edit_message(
-            content="Choose a category from the dropdown, use Previous/Next for more results, or use Search Categories if you want to look something up.",
+            content=_TVCategoryResultsView(self.db, self.cfg, categories)._message_content(),
             view=_TVCategoryResultsView(self.db, self.cfg, categories),
         )
-
-    @discord.ui.button(label="Manual Entry", style=discord.ButtonStyle.secondary)
-    async def manual_entry(self, interaction: discord.Interaction, button: discord.ui.Button):
-        del button
-        from bot.modals import TVReportModal
-
-        await interaction.response.send_modal(TVReportModal(self.db, self.cfg))
-
 
 class _TVCategorySearchModal(discord.ui.Modal, title="Find TV Category"):
     search = discord.ui.TextInput(
@@ -141,7 +142,7 @@ class _TVCategorySearchModal(discord.ui.Modal, title="Find TV Category"):
         matches = search_selector_categories(query, limit=500)
         if not matches:
             return await interaction.response.send_message(
-                "No IPTV categories matched that search. Try a broader term or use manual entry.",
+                "No IPTV categories matched that search. Try a broader term. If needed, use **/report-tv** to submit manually.",
                 view=_TVSelectorEntryView(self.db, self.cfg),
                 ephemeral=True,
             )
@@ -175,7 +176,7 @@ class _TVGlobalChannelSearchModal(discord.ui.Modal, title="Find TV Channel"):
         matches = search_all_selector_channels(query, limit=2000)
         if not matches:
             return await interaction.response.send_message(
-                "No channels matched that search. Try a broader term, browse by category, or use manual entry.",
+                "No channels matched that search. Try a broader term, or browse by category. If needed, use **/report-tv** to submit manually.",
                 view=_TVSelectorEntryView(self.db, self.cfg),
                 ephemeral=True,
             )
@@ -224,47 +225,54 @@ class _TVCategoryResultsView(discord.ui.View):
         self.previous_page.disabled = self.page <= 0
         self.next_page.disabled = self.page >= (_page_count(self.matches) - 1)
 
+    def _message_content(self) -> str:
+        header = "Choose the IPTV category."
+        if self.query:
+            header = f"Choose the IPTV category for `{self.query}`."
+        return (
+            f"{header}\n"
+            "**Recommended:** use **Search Categories (Recommended)** if you know part of the name.\n"
+            f"**Showing up to {PAGE_SIZE} categories per page.** {_page_indicator(self.matches, self.page)}."
+        )
+
     async def handle_category_selection(self, interaction: discord.Interaction, category_name: str):
         category = find_selector_category(category_name)
         channels = [channel for channel in (category or {}).get("channels", []) if isinstance(channel, dict)]
         if not channels:
             return await interaction.response.send_message(
-                f"No channels are available in **{category_name}** right now. Try a different category or use manual entry.",
+                f"No channels are available in **{category_name}** right now. Try a different category. If needed, use **/report-tv** to submit manually.",
                 view=_TVSelectorEntryView(self.db, self.cfg),
                 ephemeral=True,
             )
 
         await interaction.response.send_message(
-            f"Choose the affected channel in **{category_name}**.",
+            _TVChannelResultsView(self.db, self.cfg, category_name, channels)._message_content(),
             view=_TVChannelResultsView(self.db, self.cfg, category_name, channels),
             ephemeral=True,
         )
 
-    @discord.ui.button(label="Previous", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="Previous Page", style=discord.ButtonStyle.secondary, row=1)
     async def previous_page(self, interaction: discord.Interaction, button: discord.ui.Button):
         del button
+        view = _TVCategoryResultsView(self.db, self.cfg, self.matches, page=self.page - 1, query=self.query)
         await interaction.response.edit_message(
-            view=_TVCategoryResultsView(self.db, self.cfg, self.matches, page=self.page - 1, query=self.query)
+            content=view._message_content(),
+            view=view,
         )
 
-    @discord.ui.button(label="Next", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="Next Page", style=discord.ButtonStyle.secondary, row=1)
     async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
         del button
+        view = _TVCategoryResultsView(self.db, self.cfg, self.matches, page=self.page + 1, query=self.query)
         await interaction.response.edit_message(
-            view=_TVCategoryResultsView(self.db, self.cfg, self.matches, page=self.page + 1, query=self.query)
+            content=view._message_content(),
+            view=view,
         )
 
-    @discord.ui.button(label="Search Categories", style=discord.ButtonStyle.primary, row=1)
+    @discord.ui.button(label="Search Categories (Recommended)", style=discord.ButtonStyle.primary, row=1)
     async def search_again(self, interaction: discord.Interaction, button: discord.ui.Button):
         del button
         await interaction.response.send_modal(_TVCategorySearchModal(self.db, self.cfg))
-
-    @discord.ui.button(label="Manual Entry", style=discord.ButtonStyle.secondary, row=1)
-    async def manual_entry(self, interaction: discord.Interaction, button: discord.ui.Button):
-        del button
-        from bot.modals import TVReportModal
-
-        await interaction.response.send_modal(TVReportModal(self.db, self.cfg))
 
 
 class _TVChannelSearchModal(discord.ui.Modal, title="Find TV Channel"):
@@ -296,7 +304,7 @@ class _TVChannelSearchModal(discord.ui.Modal, title="Find TV Channel"):
             prompt = f"Choose the affected channel in **{self.category_name}** for `{query}`."
 
         await interaction.response.send_message(
-            prompt,
+            _TVChannelResultsView(self.db, self.cfg, self.category_name, matches, query=query)._message_content(),
             view=_TVChannelResultsView(self.db, self.cfg, self.category_name, matches, query=query),
             ephemeral=True,
         )
@@ -455,35 +463,49 @@ class _TVChannelResultsView(discord.ui.View):
         self.previous_page.disabled = self.page <= 0
         self.next_page.disabled = self.page >= (_page_count(self.matches) - 1)
 
-    @discord.ui.button(label="Previous", style=discord.ButtonStyle.secondary, row=1)
+    def _message_content(self) -> str:
+        header = f"Choose the affected channel in **{self.category_name}**."
+        if self.query:
+            header = f"Choose the affected channel in **{self.category_name}** for `{self.query}`."
+        return (
+            f"{header}\n"
+            "**Recommended:** use **Search Channels (Recommended)** if you know part of the name.\n"
+            f"**Showing up to {PAGE_SIZE} channels per page.** {_page_indicator(self.matches, self.page)}."
+        )
+
+    @discord.ui.button(label="Previous Page", style=discord.ButtonStyle.secondary, row=1)
     async def previous_page(self, interaction: discord.Interaction, button: discord.ui.Button):
         del button
+        view = _TVChannelResultsView(
+            self.db,
+            self.cfg,
+            self.category_name,
+            self.matches,
+            page=self.page - 1,
+            query=self.query,
+        )
         await interaction.response.edit_message(
-            view=_TVChannelResultsView(
-                self.db,
-                self.cfg,
-                self.category_name,
-                self.matches,
-                page=self.page - 1,
-                query=self.query,
-            )
+            content=view._message_content(),
+            view=view,
         )
 
-    @discord.ui.button(label="Next", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="Next Page", style=discord.ButtonStyle.secondary, row=1)
     async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
         del button
+        view = _TVChannelResultsView(
+            self.db,
+            self.cfg,
+            self.category_name,
+            self.matches,
+            page=self.page + 1,
+            query=self.query,
+        )
         await interaction.response.edit_message(
-            view=_TVChannelResultsView(
-                self.db,
-                self.cfg,
-                self.category_name,
-                self.matches,
-                page=self.page + 1,
-                query=self.query,
-            )
+            content=view._message_content(),
+            view=view,
         )
 
-    @discord.ui.button(label="Search Channels", style=discord.ButtonStyle.primary, row=1)
+    @discord.ui.button(label="Search Channels (Recommended)", style=discord.ButtonStyle.primary, row=1)
     async def search_again(self, interaction: discord.Interaction, button: discord.ui.Button):
         del button
         await interaction.response.send_modal(_TVChannelSearchModal(self.db, self.cfg, category_name=self.category_name))
@@ -492,13 +514,6 @@ class _TVChannelResultsView(discord.ui.View):
     async def change_category(self, interaction: discord.Interaction, button: discord.ui.Button):
         del button
         await interaction.response.send_modal(_TVCategorySearchModal(self.db, self.cfg))
-
-    @discord.ui.button(label="Manual Entry", style=discord.ButtonStyle.secondary, row=2)
-    async def manual_entry(self, interaction: discord.Interaction, button: discord.ui.Button):
-        del button
-        from bot.modals import TVReportModal
-
-        await interaction.response.send_modal(TVReportModal(self.db, self.cfg))
 
     async def handle_channel_selection(self, interaction: discord.Interaction, selector_key: str):
         selected = find_selector_channel(selector_key, category_name=self.category_name)
@@ -535,6 +550,16 @@ class _TVGlobalChannelResultsView(discord.ui.View):
         self.previous_page.disabled = self.page <= 0
         self.next_page.disabled = self.page >= (_page_count(self.matches) - 1)
 
+    def _message_content(self) -> str:
+        header = "Choose the affected channel."
+        if self.query:
+            header = f"Choose the affected channel for `{self.query}`."
+        return (
+            f"{header}\n"
+            "**Recommended:** use **Search Channels (Recommended)** to find the channel fastest.\n"
+            f"**Showing up to {PAGE_SIZE} channels per page.** {_page_indicator(self.matches, self.page)}."
+        )
+
     async def handle_channel_selection(self, interaction: discord.Interaction, selector_key: str):
         selected = find_selector_channel(selector_key)
         if not selected:
@@ -557,21 +582,25 @@ class _TVGlobalChannelResultsView(discord.ui.View):
             ),
         )
 
-    @discord.ui.button(label="Previous", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="Previous Page", style=discord.ButtonStyle.secondary, row=1)
     async def previous_page(self, interaction: discord.Interaction, button: discord.ui.Button):
         del button
+        view = _TVGlobalChannelResultsView(self.db, self.cfg, self.matches, page=self.page - 1, query=self.query)
         await interaction.response.edit_message(
-            view=_TVGlobalChannelResultsView(self.db, self.cfg, self.matches, page=self.page - 1, query=self.query)
+            content=view._message_content(),
+            view=view,
         )
 
-    @discord.ui.button(label="Next", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="Next Page", style=discord.ButtonStyle.secondary, row=1)
     async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
         del button
+        view = _TVGlobalChannelResultsView(self.db, self.cfg, self.matches, page=self.page + 1, query=self.query)
         await interaction.response.edit_message(
-            view=_TVGlobalChannelResultsView(self.db, self.cfg, self.matches, page=self.page + 1, query=self.query)
+            content=view._message_content(),
+            view=view,
         )
 
-    @discord.ui.button(label="Search Channels", style=discord.ButtonStyle.primary, row=1)
+    @discord.ui.button(label="Search Channels (Recommended)", style=discord.ButtonStyle.primary, row=1)
     async def search_again(self, interaction: discord.Interaction, button: discord.ui.Button):
         del button
         await interaction.response.send_modal(_TVGlobalChannelSearchModal(self.db, self.cfg))
@@ -587,16 +616,9 @@ class _TVGlobalChannelResultsView(discord.ui.View):
             )
 
         await interaction.response.edit_message(
-            content="Choose a category from the dropdown, use Previous/Next for more results, or use Search Categories if you want to look something up.",
+            content=_TVCategoryResultsView(self.db, self.cfg, categories)._message_content(),
             view=_TVCategoryResultsView(self.db, self.cfg, categories),
         )
-
-    @discord.ui.button(label="Manual Entry", style=discord.ButtonStyle.secondary, row=2)
-    async def manual_entry(self, interaction: discord.Interaction, button: discord.ui.Button):
-        del button
-        from bot.modals import TVReportModal
-
-        await interaction.response.send_modal(TVReportModal(self.db, self.cfg))
 
 
 class ReportPanelView(discord.ui.View):
@@ -653,6 +675,11 @@ class ReportPanelView(discord.ui.View):
     async def report_tv_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self._block_gate(interaction):
             return
+
+        if not _tv_selector_enabled():
+            from bot.modals import TVReportModal
+
+            return await interaction.response.send_modal(TVReportModal(self.db, self.cfg))
 
         await interaction.response.send_message(
             _tv_selector_entry_message(),
