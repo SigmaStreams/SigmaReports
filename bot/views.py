@@ -9,7 +9,6 @@ from bot.utils import _vod_4k_label, _vod_language_label, _vod_requested_label, 
 
 
 CLOSED_STATUSES = {"Resolved", "Can't replicate", "Fixed", "Not Resolved"}
-TICKETS_CATEGORY_ID = 1481229575777423362
 
 
 def _now_iso() -> str:
@@ -187,6 +186,7 @@ class ReportActionView(discord.ui.View):
         support_channel_id: int,
         public_updates: bool,
         staff_role_id: int,
+        tickets_category_id: int = 0,
     ):
         super().__init__(timeout=None)
         self.db = db
@@ -194,6 +194,7 @@ class ReportActionView(discord.ui.View):
         self.support_channel_id = int(support_channel_id or 0)
         self.public_updates = bool(public_updates)
         self.staff_role_id = int(staff_role_id or 0)
+        self.tickets_category_id = int(tickets_category_id or 0)
 
     def disable_all(self):
         for child in self.children:
@@ -347,7 +348,7 @@ class ReportActionView(discord.ui.View):
             if role:
                 overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
 
-        category = guild.get_channel(TICKETS_CATEGORY_ID)
+        category = guild.get_channel(self.tickets_category_id) if self.tickets_category_id else None
         if not isinstance(category, discord.CategoryChannel):
             category = None
 

@@ -327,6 +327,7 @@ async def _submit_vod_report(interaction: discord.Interaction, db: ReportDB, cfg
         cfg.support_channel_id,
         cfg.public_updates,
         cfg.staff_role_id,
+        cfg.tickets_category_id,
     )
 
     ping_text = ""
@@ -367,6 +368,7 @@ async def _submit_tv_report(interaction: discord.Interaction, db: ReportDB, cfg,
         cfg.support_channel_id,
         cfg.public_updates,
         cfg.staff_role_id,
+        cfg.tickets_category_id,
     )
 
     ping_text = ""
@@ -897,6 +899,7 @@ class ResolveReportModal(discord.ui.Modal):
                         support_channel_id=self.support_channel_id,
                         public_updates=self.public_updates,
                         staff_role_id=self.staff_role_id,
+                        tickets_category_id=getattr(self.cfg, "tickets_category_id", 0),
                     )
                     view.disable_all()
 
@@ -1064,6 +1067,7 @@ class NotResolvedReportModal(discord.ui.Modal):
                         support_channel_id=self.support_channel_id,
                         public_updates=self.public_updates,
                         staff_role_id=self.staff_role_id,
+                        tickets_category_id=getattr(self.cfg, "tickets_category_id", 0),
                     )
                     view.disable_all()
 

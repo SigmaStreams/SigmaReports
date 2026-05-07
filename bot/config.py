@@ -26,6 +26,7 @@ class Config:
     token: str
     staff_channel_id: int
     support_channel_id: int
+    tickets_category_id: int
     reports_channel_ids: list[int]
 
     # ✅ NEW: split pings
@@ -54,6 +55,7 @@ def load_config() -> Config:
         raise RuntimeError("Missing STAFF_CHANNEL_ID in .env")
 
     support_channel_id = int(os.getenv("SUPPORT_CHANNEL_ID", "0"))
+    tickets_category_id = int(os.getenv("TICKETS_CATEGORY_ID", "0"))
 
     reports_channel_ids = _csv_ids(os.getenv("REPORTS_CHANNEL_IDS", "").strip())
     if not reports_channel_ids:
@@ -94,6 +96,7 @@ def load_config() -> Config:
         token=token,
         staff_channel_id=staff_channel_id,
         support_channel_id=support_channel_id,
+        tickets_category_id=tickets_category_id,
         reports_channel_ids=reports_channel_ids,
         tv_staff_ping_user_ids=tv_staff_ping_user_ids,
         vod_staff_ping_user_ids=vod_staff_ping_user_ids,

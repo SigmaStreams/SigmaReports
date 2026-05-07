@@ -122,6 +122,7 @@ class Reports(commands.Cog):
             self.cfg.support_channel_id,
             self.cfg.public_updates,
             self.cfg.staff_role_id,
+            self.cfg.tickets_category_id,
         )
         if disable_actions:
             view.disable_all()
@@ -307,6 +308,7 @@ class Reports(commands.Cog):
                         self.cfg.support_channel_id,
                         self.cfg.public_updates,
                         self.cfg.staff_role_id,
+                        self.cfg.tickets_category_id,
                     )
 
                     await staff_msg.edit(embed=embed, view=view)
@@ -550,6 +552,7 @@ class Reports(commands.Cog):
             self.cfg.support_channel_id,
             self.cfg.public_updates,
             self.cfg.staff_role_id,
+            self.cfg.tickets_category_id,
         )
 
         await staff_msg.edit(embed=embed, view=view)
