@@ -33,6 +33,7 @@ def _legacy_provider() -> dict[str, Any]:
         "id": LEGACY_PROVIDER_ID,
         "name": LEGACY_PROVIDER_NAME,
         "enabled": True,
+        "normalize_event_channels": False,
         "raw_export": str(LEGACY_IPTV_EXPORT_PATH.resolve()),
         "selector_dataset": str(LEGACY_SELECTOR_DATASET_PATH.resolve()),
         "m3u_source": "",
@@ -86,6 +87,7 @@ def configured_providers(path: str | Path | None = None) -> list[dict[str, Any]]
                 "id": provider_id,
                 "name": name,
                 "enabled": bool(item.get("enabled", True)),
+                "normalize_event_channels": bool(item.get("normalize_event_channels", False)),
                 "raw_export": _resolve_data_path(item.get("raw_export"), LEGACY_IPTV_EXPORT_PATH),
                 "selector_dataset": _resolve_data_path(item.get("selector_dataset"), LEGACY_SELECTOR_DATASET_PATH),
                 "m3u_source": _resolve_data_path(item.get("m3u_source"), Path("")) if item.get("m3u_source") else "",
@@ -181,3 +183,10 @@ def provider_display_name(provider_id: str | None, *, path: str | Path | None = 
     if not provider:
         return ""
     return str(provider.get("name") or "").strip()
+
+
+def provider_normalizes_event_channels(provider_id: str | None, *, path: str | Path | None = None) -> bool:
+    provider = get_configured_provider(provider_id, path)
+    if not provider:
+        return False
+    return bool(provider.get("normalize_event_channels", False))

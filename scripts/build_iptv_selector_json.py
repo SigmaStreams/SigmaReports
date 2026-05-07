@@ -10,7 +10,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from bot.iptv import write_selector_dataset
-from bot.providers import resolve_raw_export_path, resolve_selector_dataset_path
+from bot.providers import provider_normalizes_event_channels, resolve_raw_export_path, resolve_selector_dataset_path
 
 
 def parse_args() -> argparse.Namespace:
@@ -46,6 +46,7 @@ def main() -> None:
         source_path=Path(args.input) if args.input else resolve_raw_export_path(args.provider),
         output_path=Path(args.output) if args.output else resolve_selector_dataset_path(args.provider),
         max_label_length=args.max_label_length,
+        normalize_event_channels=provider_normalizes_event_channels(args.provider),
     )
     print(
         "Built selector dataset:",

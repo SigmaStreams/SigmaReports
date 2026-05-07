@@ -188,6 +188,7 @@ Each provider entry defines:
 - `id`: a stable provider key used internally
 - `name`: the label shown to users and staff
 - `enabled`: whether the provider is available in the panel flow
+- `normalize_event_channels`: optional provider-specific cleanup for sports or PPV event suffixes in selector channel names
 - `m3u_source`: the playlist path used when rebuilding that provider's raw export
 - `raw_export`: the raw parsed JSON output path for that provider
 - `selector_dataset`: the selector-friendly JSON output path for that provider
@@ -204,6 +205,7 @@ Example:
       "id": "ss-tv",
       "name": "SS TV",
       "enabled": true,
+      "normalize_event_channels": false,
       "m3u_source": "channels/ss-tv.m3u",
       "raw_export": "data/providers/ss-tv/iptv_channels.json",
       "selector_dataset": "data/providers/ss-tv/iptv_channels_selector.json"
@@ -212,6 +214,7 @@ Example:
       "id": "ia-nebula",
       "name": "IA Nebula",
       "enabled": true,
+      "normalize_event_channels": false,
       "m3u_source": "channels/ia-nebula.m3u",
       "raw_export": "data/providers/ia-nebula/iptv_channels.json",
       "selector_dataset": "data/providers/ia-nebula/iptv_channels_selector.json"
@@ -226,6 +229,8 @@ Behavior:
 - multiple selector-ready providers: the panel prompts the user to choose a provider first
 
 TV reports created through the provider-aware flow also store the provider in the report payload so staff can see which provider the report belongs to.
+
+If a provider uses event-driven sports or PPV channel names like `MLB 01: 18:40 Red Sox X Tigers 5.5`, you can set `normalize_event_channels` to `true` for that provider. The selector dataset will then shorten the visible selector name to `MLB 01` while keeping the original raw name searchable.
 
 ## Single-Provider Migration
 
