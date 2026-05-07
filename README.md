@@ -4,6 +4,30 @@ SigmaReports is a Discord bot for collecting Live TV and VOD issue reports, rout
 
 It is built around Discord modals, persistent button views, a staff review workflow, optional private ticket channels, and SQLite-backed report storage.
 
+## Quick Start
+
+If you just want to get the bot running:
+
+1. Create `.env` from `.env.example`
+2. Prefer Docker unless you specifically want a local Python setup
+3. Start the bot with `docker compose up -d --build`
+4. If you want Live TV browse/search, provide IPTV datasets using either the legacy single-provider layout or `providers.json`
+
+Docker is the recommended setup because it avoids local Python version drift, uses the pinned runtime from this repo, and is the fastest way to get a working bot instance running.
+
+## Contents
+
+- [What The Bot Actually Does](#what-the-bot-actually-does)
+- [Requirements](#requirements)
+- [Configuration](#configuration)
+- [Running The Bot](#running-the-bot)
+- [IPTV Datasets](#iptv-datasets)
+- [Legacy Compatibility](#legacy-compatibility)
+- [Multi-Provider Setup](#multi-provider-setup)
+- [Single-Provider Migration](#single-provider-migration)
+- [Command Summary](#command-summary)
+- [Current Workflow Notes](#current-workflow-notes)
+
 ## What The Bot Actually Does
 
 ### User-facing reporting
@@ -63,11 +87,18 @@ It is built around Discord modals, persistent button views, a staff review workf
 
 ## Requirements
 
+- Recommended: Docker
 - Python 3.12.x for local runs
 - Docker is already pinned to Python 3.12
 - `discord.py==2.4.0` is not compatible with Python 3.13 because Python 3.13 removed `audioop`
 
+If you just want the bot running with the least setup friction, use Docker.
+
+Use a local Python environment only if you specifically want to develop or debug outside the container.
+
 ### Create a local venv
+
+This is the non-Docker path. Most users should prefer Docker.
 
 Use any Python 3.12 interpreter available on your machine.
 
@@ -130,20 +161,30 @@ Notes:
 
 ## Running The Bot
 
-### Local
+### Recommended: Docker
 
-```bash
-./.venv/bin/pip install -r requirements.txt
-./.venv/bin/python -m bot.main
-```
-
-### Docker
+This is the easiest and most reliable way to run SigmaReports.
 
 ```bash
 docker compose up -d --build
 ```
 
+Why Docker is recommended:
+- uses the repo's pinned Python 3.12 runtime automatically
+- avoids local dependency and interpreter mismatch issues
+- matches the documented deployment path more closely
+- works well with the optional multi-provider setup because `data/` and `providers.json` are mounted into the container
+
 When using the optional multi-provider setup, Docker also mounts your local `providers.json` into the container at `/app/providers.json`.
+
+### Local
+
+Use this only if you intentionally want to run outside Docker.
+
+```bash
+./.venv/bin/pip install -r requirements.txt
+./.venv/bin/python -m bot.main
+```
 
 ## IPTV Datasets
 
@@ -154,6 +195,11 @@ If they are present, users can search and browse IPTV categories/channels from t
 If you configure multiple providers in a local `providers.json`, the Live TV panel will prompt the user to choose a provider first. If exactly one provider is enabled, the flow skips that extra prompt and behaves like the current single-provider flow.
 
 If they are absent, unreadable, or invalid, the bot falls back to manual Live TV entry instead of breaking.
+
+Use this section based on your setup:
+
+- Legacy single-provider layout: keep using `data/iptv_channels.json` and `data/iptv_channels_selector.json`
+- Provider-aware layout: use `providers.json` plus per-provider files under `channels/` and `data/providers/`
 
 ## Legacy Compatibility
 
@@ -179,6 +225,24 @@ Optional multi-provider setup:
 - add one entry per provider
 - point each provider at its own M3U source, raw export, and selector dataset paths
 - `providers.json` is ignored by git so deployments can keep provider-specific local paths
+
+Common paths at a glance:
+
+Legacy layout:
+
+```text
+data/iptv_channels.json
+data/iptv_channels_selector.json
+```
+
+Provider-aware layout:
+
+```text
+providers.json
+channels/<provider-id>.m3u
+data/providers/<provider-id>/iptv_channels.json
+data/providers/<provider-id>/iptv_channels_selector.json
+```
 
 ## Multi-Provider Setup
 
@@ -244,6 +308,12 @@ Minimal single-provider setup:
 3. keep using the same panel flow; the bot will skip the provider picker automatically
 
 If you already have working JSON datasets, you do not need to rebuild immediately. You can simply point that provider entry at the existing files.
+
+Most common single-provider options:
+
+1. Keep the old layout and do not use `providers.json`
+2. Keep one provider in `providers.json` and point it at your existing files
+3. Move your files into `channels/<provider-id>.m3u` and `data/providers/<provider-id>/...` for future expansion
 
 Rebuild them with:
 
