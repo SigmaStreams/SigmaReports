@@ -82,12 +82,10 @@ def _provider_context(provider_id: str | None = None, provider_name: str | None 
 
 
 def _visible_provider_name(provider_id: str | None = None, provider_name: str | None = None) -> str:
-    resolved_id, resolved_name = _provider_context(provider_id, provider_name)
+    _, resolved_name = _provider_context(provider_id, provider_name)
     if not resolved_name:
         return ""
     if len(_tv_selector_providers()) > 1:
-        return resolved_name
-    if resolved_id and resolved_id.lower() != "default":
         return resolved_name
     return ""
 
