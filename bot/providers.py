@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 from typing import Any
 
 
@@ -34,6 +35,7 @@ def _legacy_provider() -> dict[str, Any]:
         "name": LEGACY_PROVIDER_NAME,
         "enabled": True,
         "normalize_event_channels": False,
+        "refresh_url_env": "",
         "raw_export": str(LEGACY_IPTV_EXPORT_PATH.resolve()),
         "selector_dataset": str(LEGACY_SELECTOR_DATASET_PATH.resolve()),
         "m3u_source": "",
@@ -88,6 +90,7 @@ def configured_providers(path: str | Path | None = None) -> list[dict[str, Any]]
                 "name": name,
                 "enabled": bool(item.get("enabled", True)),
                 "normalize_event_channels": bool(item.get("normalize_event_channels", False)),
+                "refresh_url_env": str(item.get("refresh_url_env") or "").strip(),
                 "raw_export": _resolve_data_path(item.get("raw_export"), LEGACY_IPTV_EXPORT_PATH),
                 "selector_dataset": _resolve_data_path(item.get("selector_dataset"), LEGACY_SELECTOR_DATASET_PATH),
                 "m3u_source": _resolve_data_path(item.get("m3u_source"), Path("")) if item.get("m3u_source") else "",
@@ -190,3 +193,18 @@ def provider_normalizes_event_channels(provider_id: str | None, *, path: str | P
     if not provider:
         return False
     return bool(provider.get("normalize_event_channels", False))
+
+
+def provider_refresh_url_env(provider_id: str | None, *, path: str | Path | None = None) -> str:
+    provider = get_configured_provider(provider_id, path)
+    if not provider:
+        return ""
+
+    configured_name = str(provider.get("refresh_url_env") or "").strip()
+    if configured_name:
+        return configured_name
+
+    normalized_id = re.sub(r"[^A-Za-z0-9]+", "_", str(provider.get("id") or "").strip().upper()).strip("_")
+    if not normalized_id:
+        return ""
+    return f"IPTV_REFRESH_URL_{normalized_id}"

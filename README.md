@@ -253,6 +253,7 @@ Each provider entry defines:
 - `name`: the label shown to users and staff
 - `enabled`: whether the provider is available in the panel flow
 - `normalize_event_channels`: optional provider-specific cleanup for sports or PPV event suffixes in selector channel names
+- `refresh_url_env`: optional env var name used by the refresh automation script for downloading that provider's playlist
 - `m3u_source`: the playlist path used when rebuilding that provider's raw export
 - `raw_export`: the raw parsed JSON output path for that provider
 - `selector_dataset`: the selector-friendly JSON output path for that provider
@@ -270,6 +271,7 @@ Example:
       "name": "SS TV",
       "enabled": true,
       "normalize_event_channels": false,
+      "refresh_url_env": "IPTV_REFRESH_URL_SS_TV",
       "m3u_source": "channels/ss-tv.m3u",
       "raw_export": "data/providers/ss-tv/iptv_channels.json",
       "selector_dataset": "data/providers/ss-tv/iptv_channels_selector.json"
@@ -279,6 +281,7 @@ Example:
       "name": "IA Nebula",
       "enabled": true,
       "normalize_event_channels": false,
+      "refresh_url_env": "IPTV_REFRESH_URL_IA_NEBULA",
       "m3u_source": "channels/ia-nebula.m3u",
       "raw_export": "data/providers/ia-nebula/iptv_channels.json",
       "selector_dataset": "data/providers/ia-nebula/iptv_channels_selector.json"
@@ -332,6 +335,69 @@ To rebuild assets for a specific configured provider instead, use:
 ```
 
 This works even if that provider is currently disabled in `providers.json`; the build scripts resolve configured providers, not only enabled ones.
+
+## Automated IPTV Refresh
+
+The repo includes `scripts/refresh_iptv.py` for scheduled playlist refreshes.
+
+What it does:
+- reads configured providers from `providers.json`
+- reads playlist URLs from environment variables instead of hard-coding credentials
+- downloads each provider playlist into its configured `m3u_source`
+- rebuilds both the raw export and selector dataset for that provider
+
+Recommended setup:
+- keep credentialed playlist URLs out of tracked files
+- copy `.iptv-refresh.env.example` to `.iptv-refresh.env`
+- put your provider playlist URLs in that local env file
+- run `scripts/refresh_iptv.py` from cron or a systemd timer on the machine that hosts the datasets
+
+Example `.iptv-refresh.env`:
+
+```dotenv
+IPTV_REFRESH_URL_SS_TV=https://example.com/get.php?username=user&password=pass&type=m3u_plus&output=mpegts
+IPTV_REFRESH_URL_IA_NEBULA=https://example.com/get.php?username=user&password=pass&type=m3u_plus&output=mpegts
+```
+
+Example provider config:
+
+```json
+{
+  "id": "ss-tv",
+  "name": "SS TV",
+  "enabled": true,
+  "refresh_url_env": "IPTV_REFRESH_URL_SS_TV",
+  "m3u_source": "channels/ss-tv.m3u",
+  "raw_export": "data/providers/ss-tv/iptv_channels.json",
+  "selector_dataset": "data/providers/ss-tv/iptv_channels_selector.json"
+}
+```
+
+Run all enabled providers:
+
+```bash
+./.venv/bin/python scripts/refresh_iptv.py
+```
+
+Run one provider only:
+
+```bash
+./.venv/bin/python scripts/refresh_iptv.py --provider ss-tv
+```
+
+By default the script loads `.iptv-refresh.env` if it exists. You can also point it at a different env file:
+
+```bash
+./.venv/bin/python scripts/refresh_iptv.py --env-file /path/to/iptv-refresh.env
+```
+
+The bot does not need a restart just because the selector datasets were refreshed. The runtime loader picks up updated selector files from disk on subsequent reads.
+
+Example cron entry:
+
+```cron
+0 */6 * * * cd /path/to/SigmaReports && ./.venv/bin/python scripts/refresh_iptv.py >> /var/log/sigmareports-iptv-refresh.log 2>&1
+```
 
 ### Rebuild without a local venv
 
