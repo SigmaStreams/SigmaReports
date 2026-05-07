@@ -17,14 +17,19 @@ Docker is the recommended setup because it avoids local Python version drift, us
 
 ## Contents
 
+- [Quick Start](#quick-start)
 - [What The Bot Actually Does](#what-the-bot-actually-does)
 - [Requirements](#requirements)
+- [Create a local venv](#create-a-local-venv)
 - [Configuration](#configuration)
 - [Running The Bot](#running-the-bot)
 - [IPTV Datasets](#iptv-datasets)
 - [Legacy Compatibility](#legacy-compatibility)
-- [Multi-Provider Setup](#multi-provider-setup)
 - [Single-Provider Migration](#single-provider-migration)
+- [Multi-Provider Setup](#multi-provider-setup)
+- [Automated IPTV Refresh](#automated-iptv-refresh)
+- [Rebuild without a local venv](#rebuild-without-a-local-venv)
+- [Bring Your Own M3U](#bring-your-own-m3u)
 - [Command Summary](#command-summary)
 - [Current Workflow Notes](#current-workflow-notes)
 
@@ -145,6 +150,7 @@ Required only when `PUBLIC_UPDATES=true`:
 
 Optional settings:
 - `SUPPORT_CHANNEL_ID`
+- `TICKETS_CATEGORY_ID`
 - `MODLOGS_CHANNEL_ID`
 - `TRANSCRIPTS_CHANNEL_ID`
 - `DB_PATH`
@@ -156,6 +162,7 @@ Optional settings:
 
 Notes:
 - Split TV and VOD ping lists fall back to `STAFF_PING_USER_IDS` if the split lists are empty.
+- `TICKETS_CATEGORY_ID` controls which category new ticket channels are created under. If it is empty, tickets are created without a category.
 - Runtime data is stored under `./data` by default.
 - Do not commit `.env`.
 
@@ -196,7 +203,14 @@ If you configure multiple providers in a local `providers.json`, the Live TV pan
 
 If they are absent, unreadable, or invalid, the bot falls back to manual Live TV entry instead of breaking.
 
-Use this section based on your setup:
+Use the IPTV sections below based on your setup:
+
+- Legacy single-provider layout: stay on the old `channels.m3u` plus `data/iptv_channels*.json` layout and skip `providers.json`
+- Single-provider with `providers.json`: use one provider entry now if you want the newer registry and refresh flow without introducing multiple providers yet
+- Multi-provider layout: use `providers.json` plus separate `channels/` and `data/providers/` paths per provider
+- Automated refresh: use `scripts/refresh_iptv.py` plus `.iptv-refresh.env` when you want scheduled playlist downloads and rebuilds
+
+At a glance:
 
 - Legacy single-provider layout: keep using `data/iptv_channels.json` and `data/iptv_channels_selector.json`
 - Provider-aware layout: use `providers.json` plus per-provider files under `channels/` and `data/providers/`
@@ -243,6 +257,43 @@ channels/<provider-id>.m3u
 data/providers/<provider-id>/iptv_channels.json
 data/providers/<provider-id>/iptv_channels_selector.json
 ```
+
+## Single-Provider Migration
+
+If you only have one provider, you can still use `providers.json`.
+
+That is useful if you want provider-specific file paths now, even before adding a second provider later.
+
+Minimal single-provider setup:
+1. create `providers.json` with one enabled provider
+2. point it at your existing M3U and JSON dataset paths
+3. keep using the same panel flow; the bot will skip the provider picker automatically
+
+If you already have working JSON datasets, you do not need to rebuild immediately. You can simply point that provider entry at the existing files.
+
+Most common single-provider options:
+
+1. Keep the old layout and do not use `providers.json`
+2. Keep one provider in `providers.json` and point it at your existing files
+3. Move your files into `channels/<provider-id>.m3u` and `data/providers/<provider-id>/...` for future expansion
+
+Rebuild them with:
+
+```bash
+./.venv/bin/python scripts/build_iptv_json.py
+./.venv/bin/python scripts/build_iptv_selector_json.py
+```
+
+The raw export must be built first, then the selector dataset.
+
+To rebuild assets for a specific configured provider instead, use:
+
+```bash
+./.venv/bin/python scripts/build_iptv_json.py --provider provider_a
+./.venv/bin/python scripts/build_iptv_selector_json.py --provider provider_a
+```
+
+This works even if that provider is currently disabled in `providers.json`; the build scripts resolve configured providers, not only enabled ones.
 
 ## Multi-Provider Setup
 
@@ -298,43 +349,6 @@ Behavior:
 TV reports created through the provider-aware flow also store the provider in the report payload so staff can see which provider the report belongs to.
 
 If a provider uses event-driven sports or PPV channel names like `MLB 01: 18:40 Red Sox X Tigers 5.5`, you can set `normalize_event_channels` to `true` for that provider. The selector dataset will then shorten the visible selector name to `MLB 01` while keeping the original raw name searchable.
-
-## Single-Provider Migration
-
-If you only have one provider, you can still use `providers.json`.
-
-That is useful if you want provider-specific file paths now, even before adding a second provider later.
-
-Minimal single-provider setup:
-1. create `providers.json` with one enabled provider
-2. point it at your existing M3U and JSON dataset paths
-3. keep using the same panel flow; the bot will skip the provider picker automatically
-
-If you already have working JSON datasets, you do not need to rebuild immediately. You can simply point that provider entry at the existing files.
-
-Most common single-provider options:
-
-1. Keep the old layout and do not use `providers.json`
-2. Keep one provider in `providers.json` and point it at your existing files
-3. Move your files into `channels/<provider-id>.m3u` and `data/providers/<provider-id>/...` for future expansion
-
-Rebuild them with:
-
-```bash
-./.venv/bin/python scripts/build_iptv_json.py
-./.venv/bin/python scripts/build_iptv_selector_json.py
-```
-
-The raw export must be built first, then the selector dataset.
-
-To rebuild assets for a specific configured provider instead, use:
-
-```bash
-./.venv/bin/python scripts/build_iptv_json.py --provider provider_a
-./.venv/bin/python scripts/build_iptv_selector_json.py --provider provider_a
-```
-
-This works even if that provider is currently disabled in `providers.json`; the build scripts resolve configured providers, not only enabled ones.
 
 ## Automated IPTV Refresh
 
