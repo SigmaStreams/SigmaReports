@@ -143,6 +143,8 @@ Notes:
 docker compose up -d --build
 ```
 
+When using the optional multi-provider setup, Docker also mounts your local `providers.json` into the container at `/app/providers.json`.
+
 ## IPTV Datasets
 
 The IPTV datasets are optional deployment assets used only to improve the Live TV report experience.
@@ -153,6 +155,21 @@ If you configure multiple providers in a local `providers.json`, the Live TV pan
 
 If they are absent, unreadable, or invalid, the bot falls back to manual Live TV entry instead of breaking.
 
+## Legacy Compatibility
+
+Yes, the old single-provider setup still works.
+
+If `providers.json` does not exist, the bot falls back to the legacy paths:
+- `data/iptv_channels.json`
+- `data/iptv_channels_selector.json`
+
+In that legacy mode:
+- there is no provider selection step
+- the Live TV panel behaves like the old single-provider flow
+- if `data/iptv_channels_selector.json` is missing or invalid, the bot falls back to manual Live TV entry
+
+If you move your datasets into provider-specific paths such as `data/providers/<provider_id>/...`, then you must use `providers.json` so the bot knows where to look.
+
 Files:
 - `data/iptv_channels.json` is the raw parsed M3U export.
 - `data/iptv_channels_selector.json` is the selector-friendly dataset used by the panel flow.
@@ -162,6 +179,66 @@ Optional multi-provider setup:
 - add one entry per provider
 - point each provider at its own M3U source, raw export, and selector dataset paths
 - `providers.json` is ignored by git so deployments can keep provider-specific local paths
+
+## Multi-Provider Setup
+
+`providers.json` is the runtime registry for provider-aware Live TV reporting.
+
+Each provider entry defines:
+- `id`: a stable provider key used internally
+- `name`: the label shown to users and staff
+- `enabled`: whether the provider is available in the panel flow
+- `m3u_source`: the playlist path used when rebuilding that provider's raw export
+- `raw_export`: the raw parsed JSON output path for that provider
+- `selector_dataset`: the selector-friendly JSON output path for that provider
+
+Use `providers.example.json` as the template.
+
+Example:
+
+```json
+{
+  "default_provider_id": "ss-tv",
+  "providers": [
+    {
+      "id": "ss-tv",
+      "name": "SS TV",
+      "enabled": true,
+      "m3u_source": "channels/ss-tv.m3u",
+      "raw_export": "data/providers/ss-tv/iptv_channels.json",
+      "selector_dataset": "data/providers/ss-tv/iptv_channels_selector.json"
+    },
+    {
+      "id": "ia-nebula",
+      "name": "IA Nebula",
+      "enabled": true,
+      "m3u_source": "channels/ia-nebula.m3u",
+      "raw_export": "data/providers/ia-nebula/iptv_channels.json",
+      "selector_dataset": "data/providers/ia-nebula/iptv_channels_selector.json"
+    }
+  ]
+}
+```
+
+Behavior:
+- zero selector-ready providers: the panel falls back to manual Live TV entry
+- one selector-ready provider: the panel skips provider selection and opens the normal selector flow
+- multiple selector-ready providers: the panel prompts the user to choose a provider first
+
+TV reports created through the provider-aware flow also store the provider in the report payload so staff can see which provider the report belongs to.
+
+## Single-Provider Migration
+
+If you only have one provider, you can still use `providers.json`.
+
+That is useful if you want provider-specific file paths now, even before adding a second provider later.
+
+Minimal single-provider setup:
+1. create `providers.json` with one enabled provider
+2. point it at your existing M3U and JSON dataset paths
+3. keep using the same panel flow; the bot will skip the provider picker automatically
+
+If you already have working JSON datasets, you do not need to rebuild immediately. You can simply point that provider entry at the existing files.
 
 Rebuild them with:
 
@@ -178,6 +255,8 @@ To rebuild assets for a specific configured provider instead, use:
 ./.venv/bin/python scripts/build_iptv_json.py --provider provider_a
 ./.venv/bin/python scripts/build_iptv_selector_json.py --provider provider_a
 ```
+
+This works even if that provider is currently disabled in `providers.json`; the build scripts resolve configured providers, not only enabled ones.
 
 ### Rebuild without a local venv
 
@@ -213,13 +292,36 @@ If the playlist lives elsewhere, build it locally with:
 ./.venv/bin/python scripts/build_iptv_selector_json.py --input data/iptv_channels.json --output data/iptv_channels_selector.json
 ```
 
+If you are using the multi-provider layout, store each playlist under `channels/` and rebuild by provider ID instead of manually passing paths.
+
+Example:
+
+```bash
+./.venv/bin/python scripts/build_iptv_json.py --provider ss-tv
+./.venv/bin/python scripts/build_iptv_selector_json.py --provider ss-tv
+
+./.venv/bin/python scripts/build_iptv_json.py --provider ia-nebula
+./.venv/bin/python scripts/build_iptv_selector_json.py --provider ia-nebula
+```
+
 For multiple providers, a common layout is:
 
 ```text
+channels/ss-tv.m3u
+channels/ia-nebula.m3u
 data/providers/provider_a/iptv_channels.json
 data/providers/provider_a/iptv_channels_selector.json
 data/providers/provider_b/iptv_channels.json
 data/providers/provider_b/iptv_channels_selector.json
+```
+
+In practice, your provider IDs can be any stable names, for example:
+
+```text
+data/providers/ss-tv/iptv_channels.json
+data/providers/ss-tv/iptv_channels_selector.json
+data/providers/ia-nebula/iptv_channels.json
+data/providers/ia-nebula/iptv_channels_selector.json
 ```
 
 Or inside Docker with:
