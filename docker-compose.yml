@@ -5,4 +5,5 @@ services:
     env_file:
       - .env
     volumes:
+      - ./providers.json:/app/providers.json:ro
       - ./data:/app/data
