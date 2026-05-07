@@ -198,7 +198,7 @@ class _TVCategorySelect(discord.ui.Select):
             for item in _page_slice(matches, page)
         ]
         super().__init__(
-            placeholder="Choose a TV category",
+            placeholder=f"Choose a TV category - Page {page + 1}/{_page_count(matches)}",
             min_values=1,
             max_values=1,
             options=options,
@@ -316,7 +316,7 @@ class _TVChannelSelect(discord.ui.Select):
             for item in _page_slice(matches, page)
         ]
         super().__init__(
-            placeholder="Choose a TV channel",
+            placeholder=f"Choose a TV channel - Page {page + 1}/{_page_count(matches)}",
             min_values=1,
             max_values=1,
             options=options,
