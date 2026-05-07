@@ -49,10 +49,13 @@ def _build_ticket_embed(report: dict, reporter: discord.abc.User, guild: discord
     )
 
     if rtype == "TV":
+        provider = (payload.get("provider_name") or payload.get("provider_id") or "").strip()
         ch_name = (payload.get("channel_name") or "Unknown").strip()
         ch_cat = (payload.get("channel_category") or "Unknown").strip()
         issue = (payload.get("issue") or "—").strip()
 
+        if provider:
+            embed.add_field(name="Provider", value=provider, inline=True)
         embed.add_field(name="Channel", value=ch_name or "Unknown", inline=True)
         embed.add_field(name="Category", value=ch_cat or "Unknown", inline=True)
         embed.add_field(name="Issue", value=issue[:1024] if issue else "—", inline=False)

@@ -1,0 +1,21 @@
+{
+  "default_provider_id": "provider_a",
+  "providers": [
+    {
+      "id": "provider_a",
+      "name": "Provider A",
+      "enabled": true,
+      "m3u_source": "channels/provider_a.m3u",
+      "raw_export": "data/providers/provider_a/iptv_channels.json",
+      "selector_dataset": "data/providers/provider_a/iptv_channels_selector.json"
+    },
+    {
+      "id": "provider_b",
+      "name": "Provider B",
+      "enabled": false,
+      "m3u_source": "channels/provider_b.m3u",
+      "raw_export": "data/providers/provider_b/iptv_channels.json",
+      "selector_dataset": "data/providers/provider_b/iptv_channels_selector.json"
+    }
+  ]
+}

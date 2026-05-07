@@ -149,11 +149,19 @@ The IPTV datasets are optional deployment assets used only to improve the Live T
 
 If they are present, users can search and browse IPTV categories/channels from the report panel.
 
+If you configure multiple providers in a local `providers.json`, the Live TV panel will prompt the user to choose a provider first. If exactly one provider is enabled, the flow skips that extra prompt and behaves like the current single-provider flow.
+
 If they are absent, unreadable, or invalid, the bot falls back to manual Live TV entry instead of breaking.
 
 Files:
 - `data/iptv_channels.json` is the raw parsed M3U export.
 - `data/iptv_channels_selector.json` is the selector-friendly dataset used by the panel flow.
+
+Optional multi-provider setup:
+- copy `providers.example.json` to `providers.json`
+- add one entry per provider
+- point each provider at its own M3U source, raw export, and selector dataset paths
+- `providers.json` is ignored by git so deployments can keep provider-specific local paths
 
 Rebuild them with:
 
@@ -163,6 +171,13 @@ Rebuild them with:
 ```
 
 The raw export must be built first, then the selector dataset.
+
+To rebuild assets for a specific configured provider instead, use:
+
+```bash
+./.venv/bin/python scripts/build_iptv_json.py --provider provider_a
+./.venv/bin/python scripts/build_iptv_selector_json.py --provider provider_a
+```
 
 ### Rebuild without a local venv
 
@@ -196,6 +211,15 @@ If the playlist lives elsewhere, build it locally with:
 ```bash
 ./.venv/bin/python scripts/build_iptv_json.py --input /path/to/playlist.m3u --output data/iptv_channels.json
 ./.venv/bin/python scripts/build_iptv_selector_json.py --input data/iptv_channels.json --output data/iptv_channels_selector.json
+```
+
+For multiple providers, a common layout is:
+
+```text
+data/providers/provider_a/iptv_channels.json
+data/providers/provider_a/iptv_channels_selector.json
+data/providers/provider_b/iptv_channels.json
+data/providers/provider_b/iptv_channels_selector.json
 ```
 
 Or inside Docker with:

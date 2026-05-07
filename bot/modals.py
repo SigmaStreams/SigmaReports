@@ -405,6 +405,16 @@ async def submit_tv_report_with_feedback(
     return int(report_id)
 
 
+def _with_tv_provider(payload: dict, provider_id: str | None = None, provider_name: str | None = None) -> dict:
+    resolved_id = str(provider_id or "").strip()
+    resolved_name = str(provider_name or "").strip()
+    if resolved_id:
+        payload["provider_id"] = resolved_id
+    if resolved_name:
+        payload["provider_name"] = resolved_name
+    return payload
+
+
 # ----------------------------
 # TV Modal
 # ----------------------------
@@ -414,17 +424,19 @@ class TVReportModal(discord.ui.Modal, title="Report TV Issue"):
     channel_category = discord.ui.TextInput(label="Channel category", max_length=100)
     issue = discord.ui.TextInput(label="What’s the issue?", style=discord.TextStyle.paragraph)
 
-    def __init__(self, db: ReportDB, cfg):
+    def __init__(self, db: ReportDB, cfg, *, provider_id: str | None = None, provider_name: str | None = None):
         super().__init__()
         self.db = db
         self.cfg = cfg
+        self.provider_id = str(provider_id or "").strip()
+        self.provider_name = str(provider_name or "").strip()
 
     async def on_submit(self, interaction: discord.Interaction):
-        payload = {
+        payload = _with_tv_provider({
             "channel_name": str(self.channel_name),
             "channel_category": str(self.channel_category),
             "issue": str(self.issue),
-        }
+        }, self.provider_id, self.provider_name)
 
         await submit_tv_report_with_feedback(interaction, self.db, self.cfg, payload)
 
@@ -432,19 +444,30 @@ class TVReportModal(discord.ui.Modal, title="Report TV Issue"):
 class TVIssueModal(discord.ui.Modal, title="Report TV Issue"):
     issue = discord.ui.TextInput(label="What’s the issue?", style=discord.TextStyle.paragraph)
 
-    def __init__(self, db: ReportDB, cfg, *, channel_name: str, channel_category: str):
+    def __init__(
+        self,
+        db: ReportDB,
+        cfg,
+        *,
+        channel_name: str,
+        channel_category: str,
+        provider_id: str | None = None,
+        provider_name: str | None = None,
+    ):
         super().__init__()
         self.db = db
         self.cfg = cfg
         self.channel_name = str(channel_name).strip()
         self.channel_category = str(channel_category).strip()
+        self.provider_id = str(provider_id or "").strip()
+        self.provider_name = str(provider_name or "").strip()
 
     async def on_submit(self, interaction: discord.Interaction):
-        payload = {
+        payload = _with_tv_provider({
             "channel_name": self.channel_name,
             "channel_category": self.channel_category,
             "issue": str(self.issue),
-        }
+        }, self.provider_id, self.provider_name)
 
         await submit_tv_report_with_feedback(interaction, self.db, self.cfg, payload)
 

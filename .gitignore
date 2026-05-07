@@ -1,6 +1,8 @@
 __pycache__/
 *.pyc
+*.m3u
 .env
+providers.json
 .venv/
 .venv-py313-backup/
 data/

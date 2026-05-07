@@ -7,11 +7,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from bot.providers import LEGACY_IPTV_EXPORT_PATH, LEGACY_SELECTOR_DATASET_PATH, resolve_selector_dataset_path
+
 
 _MALFORMED_NAME_MARKERS = ("tvg-name=", "tvg-logo=", "group-title=")
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_IPTV_EXPORT_PATH = _REPO_ROOT / "data" / "iptv_channels.json"
-DEFAULT_SELECTOR_DATASET_PATH = _REPO_ROOT / "data" / "iptv_channels_selector.json"
+DEFAULT_IPTV_EXPORT_PATH = LEGACY_IPTV_EXPORT_PATH
+DEFAULT_SELECTOR_DATASET_PATH = LEGACY_SELECTOR_DATASET_PATH
 
 
 def _empty_selector_dataset() -> dict[str, Any]:
@@ -134,8 +136,18 @@ def write_selector_dataset(
     return selector_dataset
 
 
-def load_selector_dataset(path: str | Path = DEFAULT_SELECTOR_DATASET_PATH) -> dict[str, Any]:
-    dataset_path = Path(path)
+def _selector_dataset_path(path: str | Path | None = None, *, provider_id: str | None = None) -> Path:
+    if path is not None:
+        return Path(path)
+    return resolve_selector_dataset_path(provider_id)
+
+
+def load_selector_dataset(
+    path: str | Path | None = None,
+    *,
+    provider_id: str | None = None,
+) -> dict[str, Any]:
+    dataset_path = _selector_dataset_path(path, provider_id=provider_id)
     if not dataset_path.exists():
         return _empty_selector_dataset()
     try:
@@ -145,15 +157,23 @@ def load_selector_dataset(path: str | Path = DEFAULT_SELECTOR_DATASET_PATH) -> d
         return _empty_selector_dataset()
 
 
-def selector_dataset_available(path: str | Path = DEFAULT_SELECTOR_DATASET_PATH) -> bool:
+def selector_dataset_available(
+    path: str | Path | None = None,
+    *,
+    provider_id: str | None = None,
+) -> bool:
     try:
-        return bool(selector_categories(path))
+        return bool(selector_categories(path, provider_id=provider_id))
     except (OSError, ValueError, json.JSONDecodeError):
         return False
 
 
-def selector_categories(path: str | Path = DEFAULT_SELECTOR_DATASET_PATH) -> list[dict[str, Any]]:
-    payload = load_selector_dataset(path)
+def selector_categories(
+    path: str | Path | None = None,
+    *,
+    provider_id: str | None = None,
+) -> list[dict[str, Any]]:
+    payload = load_selector_dataset(path, provider_id=provider_id)
     categories = payload.get("categories")
     if not isinstance(categories, list):
         raise ValueError("Selector dataset is missing a 'categories' list")
@@ -164,10 +184,11 @@ def search_selector_categories(
     query: str,
     *,
     limit: int = 25,
-    path: str | Path = DEFAULT_SELECTOR_DATASET_PATH,
+    path: str | Path | None = None,
+    provider_id: str | None = None,
 ) -> list[dict[str, Any]]:
     normalized_query = _normalize_text(query).lower()
-    categories = selector_categories(path)
+    categories = selector_categories(path, provider_id=provider_id)
 
     if not normalized_query:
         return categories[:limit]
@@ -190,9 +211,10 @@ def search_selector_channels(
     query: str,
     *,
     limit: int = 25,
-    path: str | Path = DEFAULT_SELECTOR_DATASET_PATH,
+    path: str | Path | None = None,
+    provider_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    category = find_selector_category(category_name, path=path)
+    category = find_selector_category(category_name, path=path, provider_id=provider_id)
     if not category:
         return []
 
@@ -217,9 +239,13 @@ def search_selector_channels(
     return (starts_with + contains)[:limit]
 
 
-def all_selector_channels(path: str | Path = DEFAULT_SELECTOR_DATASET_PATH) -> list[dict[str, Any]]:
+def all_selector_channels(
+    path: str | Path | None = None,
+    *,
+    provider_id: str | None = None,
+) -> list[dict[str, Any]]:
     channels: list[dict[str, Any]] = []
-    for category in selector_categories(path):
+    for category in selector_categories(path, provider_id=provider_id):
         channels.extend(channel for channel in category.get("channels", []) if isinstance(channel, dict))
     return channels
 
@@ -228,10 +254,11 @@ def search_all_selector_channels(
     query: str,
     *,
     limit: int = 25,
-    path: str | Path = DEFAULT_SELECTOR_DATASET_PATH,
+    path: str | Path | None = None,
+    provider_id: str | None = None,
 ) -> list[dict[str, Any]]:
     normalized_query = _normalize_text(query).lower()
-    channels = all_selector_channels(path)
+    channels = all_selector_channels(path, provider_id=provider_id)
     if not normalized_query:
         return channels[:limit]
 
@@ -254,13 +281,14 @@ def search_all_selector_channels(
 def find_selector_category(
     category_name: str,
     *,
-    path: str | Path = DEFAULT_SELECTOR_DATASET_PATH,
+    path: str | Path | None = None,
+    provider_id: str | None = None,
 ) -> dict[str, Any] | None:
     normalized_name = _normalize_text(category_name).lower()
     if not normalized_name:
         return None
 
-    for category in selector_categories(path):
+    for category in selector_categories(path, provider_id=provider_id):
         if _normalize_text(category.get("name")).lower() == normalized_name:
             return category
     return None
@@ -270,7 +298,8 @@ def find_selector_channel(
     selector_key: str,
     *,
     category_name: str | None = None,
-    path: str | Path = DEFAULT_SELECTOR_DATASET_PATH,
+    path: str | Path | None = None,
+    provider_id: str | None = None,
 ) -> dict[str, Any] | None:
     normalized_key = _normalize_text(selector_key)
     if not normalized_key:
@@ -278,11 +307,11 @@ def find_selector_channel(
 
     categories = []
     if category_name:
-        category = find_selector_category(category_name, path=path)
+        category = find_selector_category(category_name, path=path, provider_id=provider_id)
         if category:
             categories = [category]
     else:
-        categories = selector_categories(path)
+        categories = selector_categories(path, provider_id=provider_id)
 
     for category in categories:
         for channel in category.get("channels", []):
