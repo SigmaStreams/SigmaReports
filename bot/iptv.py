@@ -15,6 +15,8 @@ _MALFORMED_NAME_MARKERS = ("tvg-name=", "tvg-logo=", "group-title=")
 _EVENT_SUFFIX_PATTERNS = (
     re.compile(r"^(?P<base>[A-Za-z0-9+&.'()\-/ ]+\s\d{1,3})\s*:\s+.+$"),
     re.compile(r"^(?P<base>[A-Za-z0-9+&.'()\-/ ]+\sALT\s\d{1,3})\s*:\s+.+$"),
+    re.compile(r"^(?P<base>[A-Za-z0-9+&.'()\-/ ]+\s\d{1,3})\s+\d{1,2}:\d{2}\s*\|?\s+.+$"),
+    re.compile(r"^(?P<base>[A-Za-z0-9+&.'()\-/ ]+\sALT\s\d{1,3})\s+\d{1,2}:\d{2}\s*\|?\s+.+$"),
 )
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_IPTV_EXPORT_PATH = LEGACY_IPTV_EXPORT_PATH
