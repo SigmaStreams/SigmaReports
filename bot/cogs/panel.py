@@ -54,8 +54,7 @@ def _tv_selector_entry_message() -> str:
     if _tv_selector_enabled():
         return (
             "**Recommended:** start with **Search Channel** to find the channel fastest.\n"
-            "If you are not sure of the channel name, use **Browse by Category**.\n"
-            "If you still need the manual fallback, use **/report-tv**."
+            "If you are not sure of the channel name, use **Browse by Category**."
         )
     return "IPTV channel lists are not configured on this deployment. Use manual entry to submit a Live TV report."
 
@@ -142,7 +141,7 @@ class _TVCategorySearchModal(discord.ui.Modal, title="Find TV Category"):
         matches = search_selector_categories(query, limit=500)
         if not matches:
             return await interaction.response.send_message(
-                "No IPTV categories matched that search. Try a broader term. If needed, use **/report-tv** to submit manually.",
+                "No IPTV categories matched that search. Try a broader term.",
                 view=_TVSelectorEntryView(self.db, self.cfg),
                 ephemeral=True,
             )
@@ -176,7 +175,7 @@ class _TVGlobalChannelSearchModal(discord.ui.Modal, title="Find TV Channel"):
         matches = search_all_selector_channels(query, limit=2000)
         if not matches:
             return await interaction.response.send_message(
-                "No channels matched that search. Try a broader term, or browse by category. If needed, use **/report-tv** to submit manually.",
+                "No channels matched that search. Try a broader term, or browse by category.",
                 view=_TVSelectorEntryView(self.db, self.cfg),
                 ephemeral=True,
             )
@@ -240,7 +239,7 @@ class _TVCategoryResultsView(discord.ui.View):
         channels = [channel for channel in (category or {}).get("channels", []) if isinstance(channel, dict)]
         if not channels:
             return await interaction.response.send_message(
-                f"No channels are available in **{category_name}** right now. Try a different category. If needed, use **/report-tv** to submit manually.",
+                f"No channels are available in **{category_name}** right now. Try a different category.",
                 view=_TVSelectorEntryView(self.db, self.cfg),
                 ephemeral=True,
             )
