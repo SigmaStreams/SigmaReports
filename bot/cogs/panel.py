@@ -146,13 +146,11 @@ class _TVCategorySearchModal(discord.ui.Modal, title="Find TV Category"):
                 ephemeral=True,
             )
 
-        prompt = "Choose the IPTV category for this report."
-        if query:
-            prompt = f"Choose the IPTV category for `{query}`."
+        view = _TVCategoryResultsView(self.db, self.cfg, matches, query=query)
 
         await interaction.response.send_message(
-            prompt,
-            view=_TVCategoryResultsView(self.db, self.cfg, matches, query=query),
+            view._message_content(),
+            view=view,
             ephemeral=True,
         )
 
@@ -180,13 +178,11 @@ class _TVGlobalChannelSearchModal(discord.ui.Modal, title="Find TV Channel"):
                 ephemeral=True,
             )
 
-        prompt = "Choose the affected channel."
-        if query:
-            prompt = f"Choose the affected channel for `{query}`."
+        view = _TVGlobalChannelResultsView(self.db, self.cfg, matches, query=query)
 
         await interaction.response.send_message(
-            prompt,
-            view=_TVGlobalChannelResultsView(self.db, self.cfg, matches, query=query),
+            view._message_content(),
+            view=view,
             ephemeral=True,
         )
 
