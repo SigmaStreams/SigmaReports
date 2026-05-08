@@ -1123,22 +1123,14 @@ class ReportPanelCog(commands.Cog):
             return await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
 
         embed = discord.Embed(
-            title="Report an issue",
+            title="Submit a report",
             description=(
-                "Use the buttons below to submit a report.\n\n"
+                "Choose a report type below.\n\n"
                 "📺 **Live TV** — buffering, offline channels, wrong content\n"
-                "🎬 **Movies / TV Shows** — playback issues, missing episodes, quality problems\n\n"
-                "**What happens next?**\n"
-                "Staff will review your report. If we need more details, we may open a **private ticket channel** with you "
-                "so we can troubleshoot properly.\n\n"
-                "**Tips (the more detail, the faster we can fix it):**\n"
-                "• what you expected vs what happened\n"
-                "• when it happened\n"
-                "• device/app used\n"
-                "• any errors/screenshots (if applicable)"
+                "🎬 **Movies / TV Shows** — playback issues, missing episodes, quality problems"
             ),
         )
-        embed.set_footer(text="You’ll receive updates via DM and/or in a ticket channel if one is opened.")
+        embed.set_footer(text="Include as much detail as you can.")
 
         view = ReportPanelView(self.db, self.cfg)
 
