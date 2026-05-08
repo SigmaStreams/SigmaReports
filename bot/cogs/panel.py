@@ -116,7 +116,7 @@ def _tv_selector_entry_message(*, provider_id: str | None = None, provider_name:
         )
     return (
         f"{prefix}"
-        "IPTV channel lists are not configured on this deployment. Use manual entry to submit a Live TV report."
+        "IPTV channel lists are not configured on this deployment. Use manual entry to submit an IPTV report."
     )
 
 
@@ -1041,7 +1041,7 @@ class ReportPanelView(discord.ui.View):
         return False
 
     @discord.ui.button(
-        label="Report Live TV",
+        label="Report IPTV",
         style=discord.ButtonStyle.primary,
         emoji="📺",
         custom_id="panel:report_tv",
@@ -1074,13 +1074,13 @@ class ReportPanelView(discord.ui.View):
             )
 
         await interaction.response.send_message(
-            "Choose the provider for this Live TV report.",
+            "Choose the provider for this IPTV report.",
             view=_TVProviderChoiceView(self.db, self.cfg, providers),
             ephemeral=True,
         )
 
     @discord.ui.button(
-        label="Report Movie / TV Show",
+        label="Report VOD (Plex/Emby/Jellyfin)",
         style=discord.ButtonStyle.secondary,
         emoji="🎬",
         custom_id="panel:report_vod",
@@ -1126,8 +1126,8 @@ class ReportPanelCog(commands.Cog):
             title="Submit a report",
             description=(
                 "Choose a report type below.\n\n"
-                "📺 **Live TV** — buffering, offline channels, wrong content\n"
-                "🎬 **Movies / TV Shows** — playback issues, missing episodes, quality problems"
+                "📺 **IPTV** — buffering, offline channels, wrong content\n"
+                "🎬 **VOD (Plex/Emby/Jellyfin)** — playback issues, missing episodes, quality problems"
             ),
         )
         embed.set_footer(text="Include as much detail as you can.")
