@@ -120,6 +120,21 @@ def _tv_selector_entry_message(*, provider_id: str | None = None, provider_name:
     )
 
 
+async def _edit_launcher_or_respond(
+    interaction: discord.Interaction,
+    *,
+    launcher_interaction: discord.Interaction | None,
+    content: str,
+    view: discord.ui.View,
+) -> None:
+    if launcher_interaction is not None:
+        await interaction.response.defer(ephemeral=True)
+        await launcher_interaction.edit_original_response(content=content, view=view)
+        return
+
+    await interaction.response.send_message(content, view=view, ephemeral=True)
+
+
 def _iso_to_discord_ts(iso: str) -> str:
     try:
         dt = datetime.fromisoformat(iso)
@@ -269,20 +284,30 @@ class _TVCategorySearchModal(discord.ui.Modal, title="Find TV Category"):
         placeholder="Leave blank to browse the first 25 categories",
     )
 
-    def __init__(self, db, cfg, *, provider_id: str | None = None, provider_name: str | None = None):
+    def __init__(
+        self,
+        db,
+        cfg,
+        *,
+        provider_id: str | None = None,
+        provider_name: str | None = None,
+        launcher_interaction: discord.Interaction | None = None,
+    ):
         super().__init__()
         self.db = db
         self.cfg = cfg
         self.provider_id, self.provider_name = _provider_context(provider_id, provider_name)
+        self.launcher_interaction = launcher_interaction
 
     async def on_submit(self, interaction: discord.Interaction):
         query = str(self.search).strip()
         matches = search_selector_categories(query, limit=500, provider_id=self.provider_id)
         if not matches:
-            return await interaction.response.send_message(
-                "No IPTV categories matched that search. Try a broader term.",
+            return await _edit_launcher_or_respond(
+                interaction,
+                launcher_interaction=self.launcher_interaction,
+                content="No IPTV categories matched that search. Try a broader term.",
                 view=_TVSelectorEntryView(self.db, self.cfg, provider_id=self.provider_id, provider_name=self.provider_name),
-                ephemeral=True,
             )
 
         view = _TVCategoryResultsView(
@@ -294,10 +319,11 @@ class _TVCategorySearchModal(discord.ui.Modal, title="Find TV Category"):
             provider_name=self.provider_name,
         )
 
-        await interaction.response.send_message(
-            view._message_content(),
+        await _edit_launcher_or_respond(
+            interaction,
+            launcher_interaction=self.launcher_interaction,
+            content=view._message_content(),
             view=view,
-            ephemeral=True,
         )
 
 
@@ -309,20 +335,30 @@ class _TVGlobalChannelSearchModal(discord.ui.Modal, title="Find TV Channel"):
         placeholder="Enter part of the channel name",
     )
 
-    def __init__(self, db, cfg, *, provider_id: str | None = None, provider_name: str | None = None):
+    def __init__(
+        self,
+        db,
+        cfg,
+        *,
+        provider_id: str | None = None,
+        provider_name: str | None = None,
+        launcher_interaction: discord.Interaction | None = None,
+    ):
         super().__init__()
         self.db = db
         self.cfg = cfg
         self.provider_id, self.provider_name = _provider_context(provider_id, provider_name)
+        self.launcher_interaction = launcher_interaction
 
     async def on_submit(self, interaction: discord.Interaction):
         query = str(self.search).strip()
         matches = search_all_selector_channels(query, limit=2000, provider_id=self.provider_id)
         if not matches:
-            return await interaction.response.send_message(
-                "No channels matched that search. Try a broader term, or browse by category.",
+            return await _edit_launcher_or_respond(
+                interaction,
+                launcher_interaction=self.launcher_interaction,
+                content="No channels matched that search. Try a broader term, or browse by category.",
                 view=_TVSelectorEntryView(self.db, self.cfg, provider_id=self.provider_id, provider_name=self.provider_name),
-                ephemeral=True,
             )
 
         view = _TVGlobalChannelResultsView(
@@ -334,10 +370,11 @@ class _TVGlobalChannelSearchModal(discord.ui.Modal, title="Find TV Channel"):
             provider_name=self.provider_name,
         )
 
-        await interaction.response.send_message(
-            view._message_content(),
+        await _edit_launcher_or_respond(
+            interaction,
+            launcher_interaction=self.launcher_interaction,
+            content=view._message_content(),
             view=view,
-            ephemeral=True,
         )
 
 
@@ -400,30 +437,23 @@ class _TVCategoryResultsView(discord.ui.View):
         category = find_selector_category(category_name, provider_id=self.provider_id)
         channels = [channel for channel in (category or {}).get("channels", []) if isinstance(channel, dict)]
         if not channels:
-            return await interaction.response.send_message(
-                f"No channels are available in **{category_name}** right now. Try a different category.",
+            return await interaction.response.edit_message(
+                content=f"No channels are available in **{category_name}** right now. Try a different category.",
                 view=_TVSelectorEntryView(self.db, self.cfg, provider_id=self.provider_id, provider_name=self.provider_name),
-                ephemeral=True,
             )
 
-        await interaction.response.send_message(
-            _TVChannelResultsView(
-                self.db,
-                self.cfg,
-                category_name,
-                channels,
-                provider_id=self.provider_id,
-                provider_name=self.provider_name,
-            )._message_content(),
-            view=_TVChannelResultsView(
-                self.db,
-                self.cfg,
-                category_name,
-                channels,
-                provider_id=self.provider_id,
-                provider_name=self.provider_name,
-            ),
-            ephemeral=True,
+        view = _TVChannelResultsView(
+            self.db,
+            self.cfg,
+            category_name,
+            channels,
+            provider_id=self.provider_id,
+            provider_name=self.provider_name,
+        )
+
+        await interaction.response.edit_message(
+            content=view._message_content(),
+            view=view,
         )
 
     @discord.ui.button(label="Previous Page", style=discord.ButtonStyle.secondary, row=1)
@@ -469,6 +499,7 @@ class _TVCategoryResultsView(discord.ui.View):
                 self.cfg,
                 provider_id=self.provider_id,
                 provider_name=self.provider_name,
+                launcher_interaction=interaction,
             )
         )
 
@@ -481,19 +512,31 @@ class _TVChannelSearchModal(discord.ui.Modal, title="Find TV Channel"):
         placeholder="Leave blank to browse the first 25 channels in the category",
     )
 
-    def __init__(self, db, cfg, *, category_name: str, provider_id: str | None = None, provider_name: str | None = None):
+    def __init__(
+        self,
+        db,
+        cfg,
+        *,
+        category_name: str,
+        provider_id: str | None = None,
+        provider_name: str | None = None,
+        launcher_interaction: discord.Interaction | None = None,
+    ):
         super().__init__()
         self.db = db
         self.cfg = cfg
         self.category_name = str(category_name).strip()
         self.provider_id, self.provider_name = _provider_context(provider_id, provider_name)
+        self.launcher_interaction = launcher_interaction
 
     async def on_submit(self, interaction: discord.Interaction):
         query = str(self.search).strip()
         matches = search_selector_channels(self.category_name, query, limit=2000, provider_id=self.provider_id)
         if not matches:
-            return await interaction.response.send_message(
-                f"No channels matched that search in **{self.category_name}**. Try a broader term or change category.",
+            return await _edit_launcher_or_respond(
+                interaction,
+                launcher_interaction=self.launcher_interaction,
+                content=f"No channels matched that search in **{self.category_name}**. Try a broader term or change category.",
                 view=_TVChannelResultsView(
                     self.db,
                     self.cfg,
@@ -502,29 +545,23 @@ class _TVChannelSearchModal(discord.ui.Modal, title="Find TV Channel"):
                     provider_id=self.provider_id,
                     provider_name=self.provider_name,
                 ),
-                ephemeral=True,
             )
 
-        await interaction.response.send_message(
-            _TVChannelResultsView(
-                self.db,
-                self.cfg,
-                self.category_name,
-                matches,
-                query=query,
-                provider_id=self.provider_id,
-                provider_name=self.provider_name,
-            )._message_content(),
-            view=_TVChannelResultsView(
-                self.db,
-                self.cfg,
-                self.category_name,
-                matches,
-                query=query,
-                provider_id=self.provider_id,
-                provider_name=self.provider_name,
-            ),
-            ephemeral=True,
+        view = _TVChannelResultsView(
+            self.db,
+            self.cfg,
+            self.category_name,
+            matches,
+            query=query,
+            provider_id=self.provider_id,
+            provider_name=self.provider_name,
+        )
+
+        await _edit_launcher_or_respond(
+            interaction,
+            launcher_interaction=self.launcher_interaction,
+            content=view._message_content(),
+            view=view,
         )
 
 
@@ -770,6 +807,7 @@ class _TVChannelResultsView(discord.ui.View):
                 category_name=self.category_name,
                 provider_id=self.provider_id,
                 provider_name=self.provider_name,
+                launcher_interaction=interaction,
             )
         )
 
@@ -782,14 +820,15 @@ class _TVChannelResultsView(discord.ui.View):
                 self.cfg,
                 provider_id=self.provider_id,
                 provider_name=self.provider_name,
+                launcher_interaction=interaction,
             )
         )
 
     async def handle_channel_selection(self, interaction: discord.Interaction, selector_key: str):
         selected = find_selector_channel(selector_key, category_name=self.category_name, provider_id=self.provider_id)
         if not selected:
-            return await interaction.response.send_message(
-                "❌ That channel could not be resolved. Please search again.",
+            return await interaction.response.edit_message(
+                content="❌ That channel could not be resolved. Please search again.",
                 view=_TVChannelResultsView(
                     self.db,
                     self.cfg,
@@ -798,7 +837,6 @@ class _TVChannelResultsView(discord.ui.View):
                     provider_id=self.provider_id,
                     provider_name=self.provider_name,
                 ),
-                ephemeral=True,
             )
 
         await interaction.response.edit_message(
@@ -854,8 +892,8 @@ class _TVGlobalChannelResultsView(discord.ui.View):
     async def handle_channel_selection(self, interaction: discord.Interaction, selector_key: str):
         selected = find_selector_channel(selector_key, provider_id=self.provider_id)
         if not selected:
-            return await interaction.response.send_message(
-                "❌ That channel could not be resolved. Please search again.",
+            return await interaction.response.edit_message(
+                content="❌ That channel could not be resolved. Please search again.",
                 view=_TVGlobalChannelResultsView(
                     self.db,
                     self.cfg,
@@ -865,7 +903,6 @@ class _TVGlobalChannelResultsView(discord.ui.View):
                     provider_id=self.provider_id,
                     provider_name=self.provider_name,
                 ),
-                ephemeral=True,
             )
 
         await interaction.response.edit_message(
@@ -926,6 +963,7 @@ class _TVGlobalChannelResultsView(discord.ui.View):
                 self.cfg,
                 provider_id=self.provider_id,
                 provider_name=self.provider_name,
+                launcher_interaction=interaction,
             )
         )
 
