@@ -111,7 +111,7 @@ def _tv_selector_entry_message(*, provider_id: str | None = None, provider_name:
     if _tv_selector_enabled(provider_id=provider_id):
         return (
             f"{prefix}"
-            "**Recommended:** start with **Search Channel** to find the channel fastest.\n"
+            "**Recommended:** Start with **Search Channel** to find the channel fastest.\n"
             "If you are not sure of the channel name, use **Browse by Category**."
         )
     return (
@@ -429,7 +429,7 @@ class _TVCategoryResultsView(discord.ui.View):
         return (
             f"{_provider_line(self.provider_id, self.provider_name)}"
             f"{header}\n"
-            "**Recommended:** use **Search Categories (Recommended)** if you know part of the name.\n"
+            "**Recommended:** Use **Search Categories (Recommended)** if you know part of the name.\n"
             f"**Showing up to {PAGE_SIZE} categories per page.** {_page_indicator(self.matches, self.page)}."
         )
 
@@ -757,7 +757,7 @@ class _TVChannelResultsView(discord.ui.View):
         return (
             f"{_provider_line(self.provider_id, self.provider_name)}"
             f"{header}\n"
-            "**Recommended:** use **Search Channels (Recommended)** if you know part of the name.\n"
+            "**Recommended:** Use **Search Channels (Recommended)** if you know part of the name.\n"
             f"**Showing up to {PAGE_SIZE} channels per page.** {_page_indicator(self.matches, self.page)}."
         )
 
@@ -885,7 +885,7 @@ class _TVGlobalChannelResultsView(discord.ui.View):
         return (
             f"{_provider_line(self.provider_id, self.provider_name)}"
             f"{header}\n"
-            "**Recommended:** use **Search Channels (Recommended)** to find the channel fastest.\n"
+            "**Recommended:** Use **Search Channels (Recommended)** to find the channel fastest.\n"
             f"**Showing up to {PAGE_SIZE} channels per page.** {_page_indicator(self.matches, self.page)}."
         )
 
