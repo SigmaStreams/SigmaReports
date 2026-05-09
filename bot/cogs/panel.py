@@ -1160,7 +1160,7 @@ class ReportPanelCog(commands.Cog):
             description=(
                 "Choose a report type below.\n\n"
                 "📺 **IPTV** — buffering, offline channels, wrong content\n"
-                "🎬 **VOD (Plex/Emby/Jellyfin)** — playback issues, missing episodes, quality problems"
+                "🎬 **VOD** — playback issues, missing episodes, quality problems"
             ),
         )
         embed.set_footer(text="Include as much detail as you can.")
