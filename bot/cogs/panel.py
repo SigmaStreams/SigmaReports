@@ -182,6 +182,7 @@ class _TVSelectorEntryView(discord.ui.View):
                     self.cfg,
                     provider_id=self.provider_id,
                     provider_name=self.provider_name,
+                    launcher_interaction=interaction,
                 )
             )
         await interaction.response.send_modal(
@@ -604,17 +605,28 @@ class _TVIssueOptionSelect(discord.ui.Select):
 
 
 class _TVIssueChoiceView(discord.ui.View):
-    def __init__(self, db, cfg, *, channel_name: str, channel_category: str, provider_id: str | None = None, provider_name: str | None = None):
+    def __init__(
+        self,
+        db,
+        cfg,
+        *,
+        channel_name: str,
+        channel_category: str,
+        provider_id: str | None = None,
+        provider_name: str | None = None,
+        launcher_interaction: discord.Interaction | None = None,
+    ):
         super().__init__(timeout=300)
         self.db = db
         self.cfg = cfg
         self.channel_name = str(channel_name).strip()
         self.channel_category = str(channel_category).strip()
         self.provider_id, self.provider_name = _provider_context(provider_id, provider_name)
+        self.launcher_interaction = launcher_interaction
         self.add_item(_TVIssueOptionSelect(COMMON_TV_ISSUES, placeholder="Choose the issue"))
 
     async def handle_issue_selection(self, interaction: discord.Interaction, issue_value: str):
-        from bot.modals import TVIssueModal, submit_tv_report_with_feedback
+        from bot.modals import TVIssueModal, present_tv_report_confirmation
 
         follow_up = FOLLOW_UP_TV_ISSUES.get(issue_value)
         if follow_up is not None:
@@ -631,6 +643,7 @@ class _TVIssueChoiceView(discord.ui.View):
                     parent_issue=issue_value,
                     provider_id=self.provider_id,
                     provider_name=self.provider_name,
+                    launcher_interaction=self.launcher_interaction or interaction,
                 ),
             )
             return
@@ -644,6 +657,7 @@ class _TVIssueChoiceView(discord.ui.View):
                     channel_category=self.channel_category,
                     provider_id=self.provider_id,
                     provider_name=self.provider_name,
+                    launcher_interaction=self.launcher_interaction or interaction,
                 )
             )
             return
@@ -653,7 +667,13 @@ class _TVIssueChoiceView(discord.ui.View):
             "channel_category": self.channel_category,
             "issue": issue_value,
         }, self.provider_id, self.provider_name)
-        await submit_tv_report_with_feedback(interaction, self.db, self.cfg, payload)
+        await present_tv_report_confirmation(
+            interaction,
+            self.db,
+            self.cfg,
+            payload,
+            launcher_interaction=self.launcher_interaction or interaction,
+        )
 
 
 class _TVIssueFollowupView(discord.ui.View):
@@ -667,6 +687,7 @@ class _TVIssueFollowupView(discord.ui.View):
         parent_issue: str,
         provider_id: str | None = None,
         provider_name: str | None = None,
+        launcher_interaction: discord.Interaction | None = None,
     ):
         super().__init__(timeout=300)
         self.db = db
@@ -675,11 +696,12 @@ class _TVIssueFollowupView(discord.ui.View):
         self.channel_category = str(channel_category).strip()
         self.parent_issue = str(parent_issue).strip()
         self.provider_id, self.provider_name = _provider_context(provider_id, provider_name)
+        self.launcher_interaction = launcher_interaction
         follow_up = FOLLOW_UP_TV_ISSUES[self.parent_issue]
         self.add_item(_TVIssueOptionSelect(follow_up["options"], placeholder=follow_up["title"]))
 
     async def handle_issue_selection(self, interaction: discord.Interaction, issue_value: str):
-        from bot.modals import TVIssueModal, submit_tv_report_with_feedback
+        from bot.modals import TVIssueModal, present_tv_report_confirmation
 
         if issue_value == "__other__":
             await interaction.response.send_modal(
@@ -690,6 +712,7 @@ class _TVIssueFollowupView(discord.ui.View):
                     channel_category=self.channel_category,
                     provider_id=self.provider_id,
                     provider_name=self.provider_name,
+                    launcher_interaction=self.launcher_interaction or interaction,
                 )
             )
             return
@@ -699,7 +722,13 @@ class _TVIssueFollowupView(discord.ui.View):
             "channel_category": self.channel_category,
             "issue": issue_value,
         }, self.provider_id, self.provider_name)
-        await submit_tv_report_with_feedback(interaction, self.db, self.cfg, payload)
+        await present_tv_report_confirmation(
+            interaction,
+            self.db,
+            self.cfg,
+            payload,
+            launcher_interaction=self.launcher_interaction or interaction,
+        )
 
     @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, row=1)
     async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -716,6 +745,7 @@ class _TVIssueFollowupView(discord.ui.View):
                 channel_category=self.channel_category,
                 provider_id=self.provider_id,
                 provider_name=self.provider_name,
+                launcher_interaction=self.launcher_interaction,
             ),
         )
 
@@ -851,6 +881,7 @@ class _TVChannelResultsView(discord.ui.View):
                 channel_category=str(selected.get("category") or self.category_name),
                 provider_id=self.provider_id,
                 provider_name=self.provider_name,
+                launcher_interaction=interaction,
             ),
         )
 
@@ -917,6 +948,7 @@ class _TVGlobalChannelResultsView(discord.ui.View):
                 channel_category=str(selected.get("category") or "Unknown"),
                 provider_id=self.provider_id,
                 provider_name=self.provider_name,
+                launcher_interaction=interaction,
             ),
         )
 
