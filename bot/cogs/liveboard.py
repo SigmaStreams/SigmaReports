@@ -98,15 +98,15 @@ class LiveboardCog(commands.Cog):
 
         if tv_rows:
             lines = [self._format_row(guild_id, r) for r in tv_rows[:20]]
-            embed.add_field(name="📺 Live TV", value="\n".join(lines), inline=False)
+            embed.add_field(name="📺 IPTV", value="\n".join(lines), inline=False)
         else:
-            embed.add_field(name="📺 Live TV", value="No active TV reports.", inline=False)
+            embed.add_field(name="📺 IPTV", value="No active IPTV reports.", inline=False)
 
         if vod_rows:
             lines = [self._format_row(guild_id, r) for r in vod_rows[:20]]
-            embed.add_field(name="🎬 Movies / TV Shows", value="\n".join(lines), inline=False)
+            embed.add_field(name="🎬 VOD (Plex/Emby/Jellyfin)", value="\n".join(lines), inline=False)
         else:
-            embed.add_field(name="🎬 Movies / TV Shows", value="No active VOD reports.", inline=False)
+            embed.add_field(name="🎬 VOD (Plex/Emby/Jellyfin)", value="No active VOD reports.", inline=False)
 
         return embed
 

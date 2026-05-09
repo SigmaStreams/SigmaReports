@@ -63,7 +63,7 @@ def selected_providers(provider_ids: list[str] | None, *, skip_disabled: bool) -
     if provider_ids:
         requested = {provider_id.strip().lower() for provider_id in provider_ids if provider_id.strip()}
         return [provider for provider in providers if str(provider.get("id") or "").strip().lower() in requested]
-    if skip_disabled or True:
+    if skip_disabled:
         return [provider for provider in providers if provider.get("enabled")]
     return providers
 

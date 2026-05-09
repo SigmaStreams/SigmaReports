@@ -389,7 +389,7 @@ async def submit_tv_report_with_feedback(
 ) -> int:
     report_id = await _submit_tv_report(interaction, db, cfg, payload)
     success_message = (
-        f"✅ Submitted TV report **#{report_id}** for **{payload['channel_name']}**"
+        f"✅ Submitted IPTV report **#{report_id}** for **{payload['channel_name']}**"
         f" in **{payload['channel_category']}**."
     )
 
@@ -421,7 +421,7 @@ def _with_tv_provider(payload: dict, provider_id: str | None = None, provider_na
 # TV Modal
 # ----------------------------
 
-class TVReportModal(discord.ui.Modal, title="Report TV Issue"):
+class TVReportModal(discord.ui.Modal, title="Report IPTV Issue"):
     channel_name = discord.ui.TextInput(label="Channel name", max_length=100)
     channel_category = discord.ui.TextInput(label="Channel category", max_length=100)
     issue = discord.ui.TextInput(label="What’s the issue?", style=discord.TextStyle.paragraph)
@@ -443,7 +443,7 @@ class TVReportModal(discord.ui.Modal, title="Report TV Issue"):
         await submit_tv_report_with_feedback(interaction, self.db, self.cfg, payload)
 
 
-class TVIssueModal(discord.ui.Modal, title="Report TV Issue"):
+class TVIssueModal(discord.ui.Modal, title="Report IPTV Issue"):
     issue = discord.ui.TextInput(label="What’s the issue?", style=discord.TextStyle.paragraph)
 
     def __init__(
