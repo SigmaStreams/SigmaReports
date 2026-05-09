@@ -93,6 +93,7 @@ class TicketResolveView(discord.ui.View):
         support_channel_id: int,
         public_updates: bool,
         staff_role_id: int,
+        tickets_category_id: int = 0,
     ):
         super().__init__(timeout=None)
         self.db = db
@@ -100,6 +101,7 @@ class TicketResolveView(discord.ui.View):
         self.support_channel_id = int(support_channel_id or 0)
         self.public_updates = bool(public_updates)
         self.staff_role_id = int(staff_role_id or 0)
+        self.tickets_category_id = int(tickets_category_id or 0)
 
     def _is_staff(self, interaction: discord.Interaction) -> bool:
         if not self.staff_role_id:
@@ -380,6 +382,7 @@ class ReportActionView(discord.ui.View):
             support_channel_id=self.support_channel_id,
             public_updates=self.public_updates,
             staff_role_id=self.staff_role_id,
+            tickets_category_id=self.tickets_category_id,
         )
 
         await ticket_channel.send(content=reporter.mention, embed=summary, view=resolve_view)
