@@ -48,7 +48,7 @@ Docker is the recommended setup because it avoids local Python version drift, us
   - search channels globally
   - browse IPTV categories
   - pick a channel first, then choose a common issue
-- Common issue shortcuts include offline, buffering, wrong content, no audio, black screen / no video, audio sync, guide / EPG, and an "other" fallback.
+- Common issue shortcuts include channel fails to start, channel offline message, buffering, wrong content, no audio, black screen / no video, audio sync, guide / EPG, and an "other" fallback.
 - Some issues use a short follow-up selector to reduce typing.
 - If IPTV selector data is not deployed, the Live TV flow still works through manual entry.
 

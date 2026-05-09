@@ -17,22 +17,23 @@ from bot.providers import default_provider, enabled_providers, get_provider
 
 PAGE_SIZE = 25
 COMMON_TV_ISSUES = [
-    ("Channel offline", "__offline__"),
+    ("Channel fails to start", "__offline__"),
+    ("Channel offline message", "Channel shows offline message"),
     ("Buffering or freezing", "__buffering__"),
     ("Wrong content", "Wrong channel / wrong content"),
     ("No audio", "No audio"),
-    ("Black screen / no video", "No video / black screen"),
+    ("Black screen / green screen / no video", "No video / black screen / green screen"),
     ("Audio out of sync", "Audio / video de-sync"),
     ("Guide / EPG issue", "EPG / guide issue"),
     ("Something else", "__other__"),
 ]
 FOLLOW_UP_TV_ISSUES = {
     "__offline__": {
-        "title": "What best describes the offline issue?",
+        "title": "What best describes how the channel fails to start?",
         "options": [
-            ("Won’t open", "Channel offline / not loading"),
-            ("Shows an error immediately", "Channel offline / playback error on start"),
-            ("Stuck on loading", "Channel offline / stuck loading"),
+            ("Won’t open", "Channel fails to start / not loading"),
+            ("Shows an error immediately", "Channel fails to start / playback error on start"),
+            ("Stuck on loading", "Channel fails to start / stuck loading"),
         ],
     },
     "__buffering__": {
