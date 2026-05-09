@@ -327,6 +327,7 @@ async def _submit_vod_report(interaction: discord.Interaction, db: ReportDB, cfg
         cfg.support_channel_id,
         cfg.public_updates,
         cfg.staff_role_id,
+        cfg.tickets_category_id,
     )
 
     ping_text = ""
@@ -367,6 +368,7 @@ async def _submit_tv_report(interaction: discord.Interaction, db: ReportDB, cfg,
         cfg.support_channel_id,
         cfg.public_updates,
         cfg.staff_role_id,
+        cfg.tickets_category_id,
     )
 
     ping_text = ""
@@ -387,7 +389,7 @@ async def submit_tv_report_with_feedback(
 ) -> int:
     report_id = await _submit_tv_report(interaction, db, cfg, payload)
     success_message = (
-        f"✅ Submitted TV report **#{report_id}** for **{payload['channel_name']}**"
+        f"✅ Submitted IPTV report **#{report_id}** for **{payload['channel_name']}**"
         f" in **{payload['channel_category']}**."
     )
 
@@ -405,48 +407,243 @@ async def submit_tv_report_with_feedback(
     return int(report_id)
 
 
+def _tv_review_message(payload: dict) -> str:
+    provider = str(payload.get("provider_name") or payload.get("provider_id") or "").strip()
+    channel_name = str(payload.get("channel_name") or "Unknown").strip()
+    channel_category = str(payload.get("channel_category") or "Unknown").strip()
+    issue = str(payload.get("issue") or "—").strip()
+
+    lines = ["Review your IPTV report before submitting."]
+    if provider:
+        lines.append(f"**Provider:** {provider}")
+    lines.extend(
+        [
+            f"**Channel:** {channel_name or 'Unknown'}",
+            f"**Category:** {channel_category or 'Unknown'}",
+            f"**Issue:** {issue or '—'}",
+            "",
+            "Click **Confirm Submit** to send it, or **Edit Report** to make changes.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+class TVReportReviewView(discord.ui.View):
+    def __init__(self, db: ReportDB, cfg, requester_id: int, payload: dict):
+        super().__init__(timeout=300)
+        self.db = db
+        self.cfg = cfg
+        self.requester_id = int(requester_id)
+        self.payload = dict(payload)
+
+    def message_content(self) -> str:
+        return _tv_review_message(self.payload)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id == self.requester_id:
+            return True
+
+        await interaction.response.send_message(
+            "❌ Only the user who opened this IPTV report can use it.",
+            ephemeral=True,
+        )
+        return False
+
+    @discord.ui.button(label="Submit", style=discord.ButtonStyle.success)
+    async def confirm_submit(self, interaction: discord.Interaction, button: discord.ui.Button):
+        del button
+        await submit_tv_report_with_feedback(interaction, self.db, self.cfg, self.payload)
+
+    @discord.ui.button(label="Edit Report", style=discord.ButtonStyle.secondary)
+    async def edit_report(self, interaction: discord.Interaction, button: discord.ui.Button):
+        del button
+        await interaction.response.send_modal(
+            TVReviewEditModal(
+                self.db,
+                self.cfg,
+                self.requester_id,
+                self.payload,
+                interaction,
+            )
+        )
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.danger)
+    async def cancel_report(self, interaction: discord.Interaction, button: discord.ui.Button):
+        del button
+        await interaction.response.edit_message(
+            content="Cancelled IPTV report. Nothing was submitted.",
+            view=None,
+        )
+
+
+class TVReviewEditModal(discord.ui.Modal, title="Edit IPTV Report"):
+    def __init__(self, db: ReportDB, cfg, requester_id: int, payload: dict, launcher_interaction: discord.Interaction):
+        super().__init__()
+        self.db = db
+        self.cfg = cfg
+        self.requester_id = int(requester_id)
+        self.payload = dict(payload)
+        self.launcher_interaction = launcher_interaction
+
+        self.channel_name = discord.ui.TextInput(
+            label="Channel name",
+            max_length=100,
+            default=(str(self.payload.get("channel_name") or "") or None),
+        )
+        self.channel_category = discord.ui.TextInput(
+            label="Channel category",
+            max_length=100,
+            default=(str(self.payload.get("channel_category") or "") or None),
+        )
+        self.issue = discord.ui.TextInput(
+            label="What's the issue?",
+            style=discord.TextStyle.paragraph,
+            max_length=1000,
+            default=(str(self.payload.get("issue") or "") or None),
+        )
+
+        self.add_item(self.channel_name)
+        self.add_item(self.channel_category)
+        self.add_item(self.issue)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        updated_payload = _with_tv_provider(
+            {
+                "channel_name": str(self.channel_name).strip(),
+                "channel_category": str(self.channel_category).strip(),
+                "issue": str(self.issue).strip(),
+            },
+            str(self.payload.get("provider_id") or "").strip(),
+            str(self.payload.get("provider_name") or "").strip(),
+        )
+
+        view = TVReportReviewView(self.db, self.cfg, self.requester_id, updated_payload)
+        await interaction.response.defer(ephemeral=True)
+        await self.launcher_interaction.edit_original_response(
+            content=view.message_content(),
+            view=view,
+        )
+
+
+async def present_tv_report_confirmation(
+    interaction: discord.Interaction,
+    db: ReportDB,
+    cfg,
+    payload: dict,
+    *,
+    launcher_interaction: discord.Interaction | None = None,
+) -> None:
+    view = TVReportReviewView(db, cfg, interaction.user.id, payload)
+
+    if launcher_interaction is not None:
+        await interaction.response.defer(ephemeral=True)
+        await launcher_interaction.edit_original_response(
+            content=view.message_content(),
+            view=view,
+        )
+        return
+
+    try:
+        await interaction.response.edit_message(content=view.message_content(), view=view)
+        return
+    except Exception:
+        pass
+
+    if interaction.response.is_done():
+        await interaction.followup.send(view.message_content(), view=view, ephemeral=True)
+        return
+
+    await interaction.response.send_message(view.message_content(), view=view, ephemeral=True)
+
+
+def _with_tv_provider(payload: dict, provider_id: str | None = None, provider_name: str | None = None) -> dict:
+    resolved_id = str(provider_id or "").strip()
+    resolved_name = str(provider_name or "").strip()
+    if resolved_id:
+        payload["provider_id"] = resolved_id
+    if resolved_name:
+        payload["provider_name"] = resolved_name
+    return payload
+
+
 # ----------------------------
 # TV Modal
 # ----------------------------
 
-class TVReportModal(discord.ui.Modal, title="Report TV Issue"):
+class TVReportModal(discord.ui.Modal, title="Report IPTV Issue"):
     channel_name = discord.ui.TextInput(label="Channel name", max_length=100)
     channel_category = discord.ui.TextInput(label="Channel category", max_length=100)
     issue = discord.ui.TextInput(label="What’s the issue?", style=discord.TextStyle.paragraph)
 
-    def __init__(self, db: ReportDB, cfg):
+    def __init__(
+        self,
+        db: ReportDB,
+        cfg,
+        *,
+        provider_id: str | None = None,
+        provider_name: str | None = None,
+        launcher_interaction: discord.Interaction | None = None,
+    ):
         super().__init__()
         self.db = db
         self.cfg = cfg
+        self.provider_id = str(provider_id or "").strip()
+        self.provider_name = str(provider_name or "").strip()
+        self.launcher_interaction = launcher_interaction
 
     async def on_submit(self, interaction: discord.Interaction):
-        payload = {
+        payload = _with_tv_provider({
             "channel_name": str(self.channel_name),
             "channel_category": str(self.channel_category),
             "issue": str(self.issue),
-        }
+        }, self.provider_id, self.provider_name)
 
-        await submit_tv_report_with_feedback(interaction, self.db, self.cfg, payload)
+        await present_tv_report_confirmation(
+            interaction,
+            self.db,
+            self.cfg,
+            payload,
+            launcher_interaction=self.launcher_interaction,
+        )
 
 
-class TVIssueModal(discord.ui.Modal, title="Report TV Issue"):
+class TVIssueModal(discord.ui.Modal, title="Report IPTV Issue"):
     issue = discord.ui.TextInput(label="What’s the issue?", style=discord.TextStyle.paragraph)
 
-    def __init__(self, db: ReportDB, cfg, *, channel_name: str, channel_category: str):
+    def __init__(
+        self,
+        db: ReportDB,
+        cfg,
+        *,
+        channel_name: str,
+        channel_category: str,
+        provider_id: str | None = None,
+        provider_name: str | None = None,
+        launcher_interaction: discord.Interaction | None = None,
+    ):
         super().__init__()
         self.db = db
         self.cfg = cfg
         self.channel_name = str(channel_name).strip()
         self.channel_category = str(channel_category).strip()
+        self.provider_id = str(provider_id or "").strip()
+        self.provider_name = str(provider_name or "").strip()
+        self.launcher_interaction = launcher_interaction
 
     async def on_submit(self, interaction: discord.Interaction):
-        payload = {
+        payload = _with_tv_provider({
             "channel_name": self.channel_name,
             "channel_category": self.channel_category,
             "issue": str(self.issue),
-        }
+        }, self.provider_id, self.provider_name)
 
-        await submit_tv_report_with_feedback(interaction, self.db, self.cfg, payload)
+        await present_tv_report_confirmation(
+            interaction,
+            self.db,
+            self.cfg,
+            payload,
+            launcher_interaction=self.launcher_interaction,
+        )
 
 
 # ----------------------------
@@ -768,6 +965,7 @@ class ResolveReportModal(discord.ui.Modal):
         support_channel_id: int,
         public_updates: bool,
         staff_role_id: int,
+        tickets_category_id: int,
         report_id: int,
         *,
         delete_current_channel: bool = False,
@@ -779,6 +977,7 @@ class ResolveReportModal(discord.ui.Modal):
         self.support_channel_id = int(support_channel_id or 0)
         self.public_updates = bool(public_updates)
         self.staff_role_id = int(staff_role_id or 0)
+        self.tickets_category_id = int(tickets_category_id or 0)
         self.report_id = int(report_id)
         self.delete_current_channel = bool(delete_current_channel)
         self.close_ticket_channel = bool(close_ticket_channel)
@@ -874,6 +1073,7 @@ class ResolveReportModal(discord.ui.Modal):
                         support_channel_id=self.support_channel_id,
                         public_updates=self.public_updates,
                         staff_role_id=self.staff_role_id,
+                        tickets_category_id=self.tickets_category_id,
                     )
                     view.disable_all()
 
@@ -940,6 +1140,7 @@ class NotResolvedReportModal(discord.ui.Modal):
         support_channel_id: int,
         public_updates: bool,
         staff_role_id: int,
+        tickets_category_id: int,
         report_id: int,
         *,
         delete_current_channel: bool = False,
@@ -951,6 +1152,7 @@ class NotResolvedReportModal(discord.ui.Modal):
         self.support_channel_id = int(support_channel_id or 0)
         self.public_updates = bool(public_updates)
         self.staff_role_id = int(staff_role_id or 0)
+        self.tickets_category_id = int(tickets_category_id or 0)
         self.report_id = int(report_id)
         self.delete_current_channel = bool(delete_current_channel)
         self.close_ticket_channel = bool(close_ticket_channel)
@@ -1041,6 +1243,7 @@ class NotResolvedReportModal(discord.ui.Modal):
                         support_channel_id=self.support_channel_id,
                         public_updates=self.public_updates,
                         staff_role_id=self.staff_role_id,
+                        tickets_category_id=self.tickets_category_id,
                     )
                     view.disable_all()
 

@@ -122,6 +122,7 @@ class Reports(commands.Cog):
             self.cfg.support_channel_id,
             self.cfg.public_updates,
             self.cfg.staff_role_id,
+            self.cfg.tickets_category_id,
         )
         if disable_actions:
             view.disable_all()
@@ -193,7 +194,7 @@ class Reports(commands.Cog):
 
     @app_commands.command(
         name="report-tv",
-        description="Manual fallback for live TV reports when the panel is unavailable.",
+        description="Manual fallback for IPTV reports when the panel is unavailable.",
     )
     async def report_tv(self, interaction: discord.Interaction):
         if not self._allowed_channel(interaction):
@@ -208,7 +209,7 @@ class Reports(commands.Cog):
 
     @app_commands.command(
         name="report-vod",
-        description="Report an issue with a movie or TV show.",
+        description="Report an issue with VOD (Plex/Emby/Jellyfin).",
     )
     async def report_vod(self, interaction: discord.Interaction):
         if not self._allowed_channel(interaction):
@@ -307,6 +308,7 @@ class Reports(commands.Cog):
                         self.cfg.support_channel_id,
                         self.cfg.public_updates,
                         self.cfg.staff_role_id,
+                        self.cfg.tickets_category_id,
                     )
 
                     await staff_msg.edit(embed=embed, view=view)
@@ -550,6 +552,7 @@ class Reports(commands.Cog):
             self.cfg.support_channel_id,
             self.cfg.public_updates,
             self.cfg.staff_role_id,
+            self.cfg.tickets_category_id,
         )
 
         await staff_msg.edit(embed=embed, view=view)

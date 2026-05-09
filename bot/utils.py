@@ -167,10 +167,13 @@ def build_staff_embed(
     embed.add_field(name="Reported from", value=_safe_channel_name(source_channel), inline=False)
 
     if rt == "TV":
+        provider = (payload or {}).get("provider_name") or (payload or {}).get("provider_id") or ""
         ch_name = (payload or {}).get("channel_name") or "Unknown"
         ch_cat = (payload or {}).get("channel_category") or "Unknown"
         issue = (payload or {}).get("issue") or "—"
 
+        if str(provider).strip():
+            embed.add_field(name="Provider", value=str(provider), inline=True)
         embed.add_field(name="Channel", value=str(ch_name), inline=True)
         embed.add_field(name="Category", value=str(ch_cat), inline=True)
         embed.add_field(name="Issue", value=str(issue), inline=False)

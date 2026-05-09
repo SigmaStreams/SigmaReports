@@ -9,7 +9,6 @@ from bot.utils import _vod_4k_label, _vod_language_label, _vod_requested_label, 
 
 
 CLOSED_STATUSES = {"Resolved", "Can't replicate", "Fixed", "Not Resolved"}
-TICKETS_CATEGORY_ID = 1481229575777423362
 
 
 def _now_iso() -> str:
@@ -49,10 +48,13 @@ def _build_ticket_embed(report: dict, reporter: discord.abc.User, guild: discord
     )
 
     if rtype == "TV":
+        provider = (payload.get("provider_name") or payload.get("provider_id") or "").strip()
         ch_name = (payload.get("channel_name") or "Unknown").strip()
         ch_cat = (payload.get("channel_category") or "Unknown").strip()
         issue = (payload.get("issue") or "—").strip()
 
+        if provider:
+            embed.add_field(name="Provider", value=provider, inline=True)
         embed.add_field(name="Channel", value=ch_name or "Unknown", inline=True)
         embed.add_field(name="Category", value=ch_cat or "Unknown", inline=True)
         embed.add_field(name="Issue", value=issue[:1024] if issue else "—", inline=False)
@@ -91,6 +93,7 @@ class TicketResolveView(discord.ui.View):
         support_channel_id: int,
         public_updates: bool,
         staff_role_id: int,
+        tickets_category_id: int = 0,
     ):
         super().__init__(timeout=None)
         self.db = db
@@ -98,6 +101,7 @@ class TicketResolveView(discord.ui.View):
         self.support_channel_id = int(support_channel_id or 0)
         self.public_updates = bool(public_updates)
         self.staff_role_id = int(staff_role_id or 0)
+        self.tickets_category_id = int(tickets_category_id or 0)
 
     def _is_staff(self, interaction: discord.Interaction) -> bool:
         if not self.staff_role_id:
@@ -139,6 +143,7 @@ class TicketResolveView(discord.ui.View):
             support_channel_id=self.support_channel_id,
             public_updates=self.public_updates,
             staff_role_id=self.staff_role_id,
+            tickets_category_id=self.tickets_category_id,
             report_id=report_id,
             delete_current_channel=True,   # this IS the ticket channel
             close_ticket_channel=False,    # modal will clear DB + delete current channel
@@ -169,6 +174,7 @@ class TicketResolveView(discord.ui.View):
             support_channel_id=self.support_channel_id,
             public_updates=self.public_updates,
             staff_role_id=self.staff_role_id,
+            tickets_category_id=self.tickets_category_id,
             report_id=report_id,
             delete_current_channel=True,   # this IS the ticket channel
             close_ticket_channel=False,    # modal will clear DB + delete current channel
@@ -184,6 +190,7 @@ class ReportActionView(discord.ui.View):
         support_channel_id: int,
         public_updates: bool,
         staff_role_id: int,
+        tickets_category_id: int = 0,
     ):
         super().__init__(timeout=None)
         self.db = db
@@ -191,6 +198,7 @@ class ReportActionView(discord.ui.View):
         self.support_channel_id = int(support_channel_id or 0)
         self.public_updates = bool(public_updates)
         self.staff_role_id = int(staff_role_id or 0)
+        self.tickets_category_id = int(tickets_category_id or 0)
 
     def disable_all(self):
         for child in self.children:
@@ -268,6 +276,7 @@ class ReportActionView(discord.ui.View):
             support_channel_id=self.support_channel_id,
             public_updates=self.public_updates,
             staff_role_id=self.staff_role_id,
+            tickets_category_id=self.tickets_category_id,
             report_id=report_id,
             delete_current_channel=False,  # staff channel message, don't delete this channel
             close_ticket_channel=True,     # close any ticket for this report first
@@ -296,6 +305,7 @@ class ReportActionView(discord.ui.View):
             support_channel_id=self.support_channel_id,
             public_updates=self.public_updates,
             staff_role_id=self.staff_role_id,
+            tickets_category_id=self.tickets_category_id,
             report_id=report_id,
             delete_current_channel=False,  # staff channel message, don't delete this channel
             close_ticket_channel=True,     # close any ticket for this report first
@@ -344,7 +354,7 @@ class ReportActionView(discord.ui.View):
             if role:
                 overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
 
-        category = guild.get_channel(TICKETS_CATEGORY_ID)
+        category = guild.get_channel(self.tickets_category_id) if self.tickets_category_id else None
         if not isinstance(category, discord.CategoryChannel):
             category = None
 
@@ -372,6 +382,7 @@ class ReportActionView(discord.ui.View):
             support_channel_id=self.support_channel_id,
             public_updates=self.public_updates,
             staff_role_id=self.staff_role_id,
+            tickets_category_id=self.tickets_category_id,
         )
 
         await ticket_channel.send(content=reporter.mention, embed=summary, view=resolve_view)

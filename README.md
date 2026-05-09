@@ -4,6 +4,35 @@ SigmaReports is a Discord bot for collecting Live TV and VOD issue reports, rout
 
 It is built around Discord modals, persistent button views, a staff review workflow, optional private ticket channels, and SQLite-backed report storage.
 
+## Quick Start
+
+If you just want to get the bot running:
+
+1. Create `.env` from `.env.example`
+2. Prefer Docker unless you specifically want a local Python setup
+3. Start the bot with `docker compose up -d --build`
+4. If you want Live TV browse/search, provide IPTV datasets using either the legacy single-provider layout or `providers.json`
+
+Docker is the recommended setup because it avoids local Python version drift, uses the pinned runtime from this repo, and is the fastest way to get a working bot instance running.
+
+## Contents
+
+- [Quick Start](#quick-start)
+- [What The Bot Actually Does](#what-the-bot-actually-does)
+- [Requirements](#requirements)
+- [Create a local venv](#create-a-local-venv)
+- [Configuration](#configuration)
+- [Running The Bot](#running-the-bot)
+- [IPTV Datasets](#iptv-datasets)
+- [Legacy Compatibility](#legacy-compatibility)
+- [Single-Provider Migration](#single-provider-migration)
+- [Multi-Provider Setup](#multi-provider-setup)
+- [Automated IPTV Refresh](#automated-iptv-refresh)
+- [Rebuild without a local venv](#rebuild-without-a-local-venv)
+- [Bring Your Own M3U](#bring-your-own-m3u)
+- [Command Summary](#command-summary)
+- [Current Workflow Notes](#current-workflow-notes)
+
 ## What The Bot Actually Does
 
 ### User-facing reporting
@@ -63,11 +92,18 @@ It is built around Discord modals, persistent button views, a staff review workf
 
 ## Requirements
 
+- Recommended: Docker
 - Python 3.12.x for local runs
 - Docker is already pinned to Python 3.12
 - `discord.py==2.4.0` is not compatible with Python 3.13 because Python 3.13 removed `audioop`
 
+If you just want the bot running with the least setup friction, use Docker.
+
+Use a local Python environment only if you specifically want to develop or debug outside the container.
+
 ### Create a local venv
+
+This is the non-Docker path. Most users should prefer Docker.
 
 Use any Python 3.12 interpreter available on your machine.
 
@@ -114,6 +150,7 @@ Required only when `PUBLIC_UPDATES=true`:
 
 Optional settings:
 - `SUPPORT_CHANNEL_ID`
+- `TICKETS_CATEGORY_ID`
 - `MODLOGS_CHANNEL_ID`
 - `TRANSCRIPTS_CHANNEL_ID`
 - `DB_PATH`
@@ -125,22 +162,35 @@ Optional settings:
 
 Notes:
 - Split TV and VOD ping lists fall back to `STAFF_PING_USER_IDS` if the split lists are empty.
+- `TICKETS_CATEGORY_ID` controls which category new ticket channels are created under. If it is empty, tickets are created without a category.
 - Runtime data is stored under `./data` by default.
 - Do not commit `.env`.
 
 ## Running The Bot
 
+### Recommended: Docker
+
+This is the easiest and most reliable way to run SigmaReports.
+
+```bash
+docker compose up -d --build
+```
+
+Why Docker is recommended:
+- uses the repo's pinned Python 3.12 runtime automatically
+- avoids local dependency and interpreter mismatch issues
+- matches the documented deployment path more closely
+- works well with the optional multi-provider setup because `data/` and `providers.json` are mounted into the container
+
+When using the optional multi-provider setup, Docker also mounts your local `providers.json` into the container at `/app/providers.json`.
+
 ### Local
+
+Use this only if you intentionally want to run outside Docker.
 
 ```bash
 ./.venv/bin/pip install -r requirements.txt
 ./.venv/bin/python -m bot.main
-```
-
-### Docker
-
-```bash
-docker compose up -d --build
 ```
 
 ## IPTV Datasets
@@ -149,11 +199,83 @@ The IPTV datasets are optional deployment assets used only to improve the Live T
 
 If they are present, users can search and browse IPTV categories/channels from the report panel.
 
+If you configure multiple providers in a local `providers.json`, the Live TV panel will prompt the user to choose a provider first. If exactly one provider is enabled, the flow skips that extra prompt and behaves like the current single-provider flow.
+
 If they are absent, unreadable, or invalid, the bot falls back to manual Live TV entry instead of breaking.
+
+Use the IPTV sections below based on your setup:
+
+- Legacy single-provider layout: stay on the old `channels.m3u` plus `data/iptv_channels*.json` layout and skip `providers.json`
+- Single-provider with `providers.json`: use one provider entry now if you want the newer registry and refresh flow without introducing multiple providers yet
+- Multi-provider layout: use `providers.json` plus separate `channels/` and `data/providers/` paths per provider
+- Automated refresh: use `scripts/refresh_iptv.py` plus `.iptv-refresh.env` when you want scheduled playlist downloads and rebuilds
+
+At a glance:
+
+- Legacy single-provider layout: keep using `data/iptv_channels.json` and `data/iptv_channels_selector.json`
+- Provider-aware layout: use `providers.json` plus per-provider files under `channels/` and `data/providers/`
+
+## Legacy Compatibility
+
+Yes, the old single-provider setup still works.
+
+If `providers.json` does not exist, the bot falls back to the legacy paths:
+- `data/iptv_channels.json`
+- `data/iptv_channels_selector.json`
+
+In that legacy mode:
+- there is no provider selection step
+- the Live TV panel behaves like the old single-provider flow
+- if `data/iptv_channels_selector.json` is missing or invalid, the bot falls back to manual Live TV entry
+
+If you move your datasets into provider-specific paths such as `data/providers/<provider_id>/...`, then you must use `providers.json` so the bot knows where to look.
 
 Files:
 - `data/iptv_channels.json` is the raw parsed M3U export.
 - `data/iptv_channels_selector.json` is the selector-friendly dataset used by the panel flow.
+
+Optional multi-provider setup:
+- copy `providers.example.json` to `providers.json`
+- add one entry per provider
+- point each provider at its own M3U source, raw export, and selector dataset paths
+- `providers.json` is ignored by git so deployments can keep provider-specific local paths
+
+Common paths at a glance:
+
+Legacy layout:
+
+```text
+data/iptv_channels.json
+data/iptv_channels_selector.json
+```
+
+Provider-aware layout:
+
+```text
+providers.json
+channels/<provider-id>.m3u
+data/providers/<provider-id>/iptv_channels.json
+data/providers/<provider-id>/iptv_channels_selector.json
+```
+
+## Single-Provider Migration
+
+If you only have one provider, you can still use `providers.json`.
+
+That is useful if you want provider-specific file paths now, even before adding a second provider later.
+
+Minimal single-provider setup:
+1. create `providers.json` with one enabled provider
+2. point it at your existing M3U and JSON dataset paths
+3. keep using the same panel flow; the bot will skip the provider picker automatically
+
+If you already have working JSON datasets, you do not need to rebuild immediately. You can simply point that provider entry at the existing files.
+
+Most common single-provider options:
+
+1. Keep the old layout and do not use `providers.json`
+2. Keep one provider in `providers.json` and point it at your existing files
+3. Move your files into `channels/<provider-id>.m3u` and `data/providers/<provider-id>/...` for future expansion
 
 Rebuild them with:
 
@@ -163,6 +285,133 @@ Rebuild them with:
 ```
 
 The raw export must be built first, then the selector dataset.
+
+To rebuild assets for a specific configured provider instead, use:
+
+```bash
+./.venv/bin/python scripts/build_iptv_json.py --provider provider_a
+./.venv/bin/python scripts/build_iptv_selector_json.py --provider provider_a
+```
+
+This works even if that provider is currently disabled in `providers.json`; the build scripts resolve configured providers, not only enabled ones.
+
+## Multi-Provider Setup
+
+`providers.json` is the runtime registry for provider-aware Live TV reporting.
+
+Each provider entry defines:
+- `id`: a stable provider key used internally
+- `name`: the label shown to users and staff
+- `enabled`: whether the provider is available in the panel flow
+- `normalize_event_channels`: optional provider-specific cleanup for sports or PPV event suffixes in selector channel names
+- `refresh_url_env`: optional env var name used by the refresh automation script for downloading that provider's playlist
+- `m3u_source`: the playlist path used when rebuilding that provider's raw export
+- `raw_export`: the raw parsed JSON output path for that provider
+- `selector_dataset`: the selector-friendly JSON output path for that provider
+
+Use `providers.example.json` as the template.
+
+Example:
+
+```json
+{
+  "default_provider_id": "ss-tv",
+  "providers": [
+    {
+      "id": "ss-tv",
+      "name": "SS TV",
+      "enabled": true,
+      "normalize_event_channels": false,
+      "refresh_url_env": "IPTV_REFRESH_URL_SS_TV",
+      "m3u_source": "channels/ss-tv.m3u",
+      "raw_export": "data/providers/ss-tv/iptv_channels.json",
+      "selector_dataset": "data/providers/ss-tv/iptv_channels_selector.json"
+    },
+    {
+      "id": "ia-nebula",
+      "name": "IA Nebula",
+      "enabled": true,
+      "normalize_event_channels": false,
+      "refresh_url_env": "IPTV_REFRESH_URL_IA_NEBULA",
+      "m3u_source": "channels/ia-nebula.m3u",
+      "raw_export": "data/providers/ia-nebula/iptv_channels.json",
+      "selector_dataset": "data/providers/ia-nebula/iptv_channels_selector.json"
+    }
+  ]
+}
+```
+
+Behavior:
+- zero selector-ready providers: the panel falls back to manual Live TV entry
+- one selector-ready provider: the panel skips provider selection and opens the normal selector flow
+- multiple selector-ready providers: the panel prompts the user to choose a provider first
+
+TV reports created through the provider-aware flow also store the provider in the report payload so staff can see which provider the report belongs to.
+
+If a provider uses event-driven sports or PPV channel names like `MLB 01: 18:40 Red Sox X Tigers 5.5`, you can set `normalize_event_channels` to `true` for that provider. The selector dataset will then shorten the visible selector name to `MLB 01` while keeping the original raw name searchable.
+
+## Automated IPTV Refresh
+
+The repo includes `scripts/refresh_iptv.py` for scheduled playlist refreshes.
+
+What it does:
+- reads configured providers from `providers.json`
+- reads playlist URLs from environment variables instead of hard-coding credentials
+- downloads each provider playlist into its configured `m3u_source`
+- rebuilds both the raw export and selector dataset for that provider
+
+Recommended setup:
+- keep credentialed playlist URLs out of tracked files
+- copy `.iptv-refresh.env.example` to `.iptv-refresh.env`
+- put your provider playlist URLs in that local env file
+- run `scripts/refresh_iptv.py` from cron or a systemd timer on the machine that hosts the datasets
+
+Example `.iptv-refresh.env`:
+
+```dotenv
+IPTV_REFRESH_URL_SS_TV=https://example.com/get.php?username=user&password=pass&type=m3u_plus&output=mpegts
+IPTV_REFRESH_URL_IA_NEBULA=https://example.com/get.php?username=user&password=pass&type=m3u_plus&output=mpegts
+```
+
+Example provider config:
+
+```json
+{
+  "id": "ss-tv",
+  "name": "SS TV",
+  "enabled": true,
+  "refresh_url_env": "IPTV_REFRESH_URL_SS_TV",
+  "m3u_source": "channels/ss-tv.m3u",
+  "raw_export": "data/providers/ss-tv/iptv_channels.json",
+  "selector_dataset": "data/providers/ss-tv/iptv_channels_selector.json"
+}
+```
+
+Run all enabled providers:
+
+```bash
+./.venv/bin/python scripts/refresh_iptv.py
+```
+
+Run one provider only:
+
+```bash
+./.venv/bin/python scripts/refresh_iptv.py --provider ss-tv
+```
+
+By default the script loads `.iptv-refresh.env` if it exists. You can also point it at a different env file:
+
+```bash
+./.venv/bin/python scripts/refresh_iptv.py --env-file /path/to/iptv-refresh.env
+```
+
+The bot does not need a restart just because the selector datasets were refreshed. The runtime loader picks up updated selector files from disk on subsequent reads.
+
+Example cron entry:
+
+```cron
+0 */6 * * * cd /path/to/SigmaReports && ./.venv/bin/python scripts/refresh_iptv.py >> /var/log/sigmareports-iptv-refresh.log 2>&1
+```
 
 ### Rebuild without a local venv
 
@@ -196,6 +445,38 @@ If the playlist lives elsewhere, build it locally with:
 ```bash
 ./.venv/bin/python scripts/build_iptv_json.py --input /path/to/playlist.m3u --output data/iptv_channels.json
 ./.venv/bin/python scripts/build_iptv_selector_json.py --input data/iptv_channels.json --output data/iptv_channels_selector.json
+```
+
+If you are using the multi-provider layout, store each playlist under `channels/` and rebuild by provider ID instead of manually passing paths.
+
+Example:
+
+```bash
+./.venv/bin/python scripts/build_iptv_json.py --provider ss-tv
+./.venv/bin/python scripts/build_iptv_selector_json.py --provider ss-tv
+
+./.venv/bin/python scripts/build_iptv_json.py --provider ia-nebula
+./.venv/bin/python scripts/build_iptv_selector_json.py --provider ia-nebula
+```
+
+For multiple providers, a common layout is:
+
+```text
+channels/ss-tv.m3u
+channels/ia-nebula.m3u
+data/providers/provider_a/iptv_channels.json
+data/providers/provider_a/iptv_channels_selector.json
+data/providers/provider_b/iptv_channels.json
+data/providers/provider_b/iptv_channels_selector.json
+```
+
+In practice, your provider IDs can be any stable names, for example:
+
+```text
+data/providers/ss-tv/iptv_channels.json
+data/providers/ss-tv/iptv_channels_selector.json
+data/providers/ia-nebula/iptv_channels.json
+data/providers/ia-nebula/iptv_channels_selector.json
 ```
 
 Or inside Docker with:

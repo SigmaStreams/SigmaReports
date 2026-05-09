@@ -1,8 +1,12 @@
 __pycache__/
 *.pyc
+*.m3u
 .env
+.iptv-refresh.env
+providers.json
 .venv/
 .venv-py313-backup/
+logs/
 data/
 data/iptv_channels.json
 

@@ -71,6 +71,7 @@ class SigmaReportsBot(commands.Bot):
                 self.cfg.support_channel_id,
                 self.cfg.public_updates,
                 self.cfg.staff_role_id,
+                self.cfg.tickets_category_id,
             )
         )
         self.add_view(
@@ -80,6 +81,7 @@ class SigmaReportsBot(commands.Bot):
                 self.cfg.support_channel_id,
                 self.cfg.public_updates,
                 self.cfg.staff_role_id,
+                self.cfg.tickets_category_id,
             )
         )
 

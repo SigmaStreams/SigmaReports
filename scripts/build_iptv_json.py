@@ -13,6 +13,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from bot.providers import resolve_m3u_source_path, resolve_raw_export_path
+
 
 ATTR_PATTERN = re.compile(r'([A-Za-z0-9_-]+)="([^"]*)"')
 
@@ -22,13 +24,17 @@ def parse_args() -> argparse.Namespace:
         description="Build a raw IPTV JSON export from an M3U playlist.",
     )
     parser.add_argument(
+        "--provider",
+        help="Provider ID from providers.json.",
+    )
+    parser.add_argument(
         "--input",
-        default="channels.m3u",
+        default=None,
         help="Path to the source M3U playlist.",
     )
     parser.add_argument(
         "--output",
-        default="data/iptv_channels.json",
+        default=None,
         help="Path to write the parsed IPTV JSON export.",
     )
     return parser.parse_args()
@@ -110,13 +116,14 @@ def build_export(source_path: Path) -> dict:
 
 def main() -> None:
     args = parse_args()
-    source_path = Path(args.input)
-    output_path = Path(args.output)
+    source_path = Path(args.input) if args.input else resolve_m3u_source_path(args.provider)
+    output_path = Path(args.output) if args.output else resolve_raw_export_path(args.provider)
     payload = build_export(source_path)
     output_path.write_text(json.dumps(payload, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
     print(
         "Built raw IPTV export:",
         {
+            "provider": args.provider or "legacy",
             "source": str(source_path),
             "output": str(output_path),
             "channel_count": payload["channel_count"],
