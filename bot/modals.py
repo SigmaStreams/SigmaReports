@@ -449,7 +449,7 @@ class TVReportReviewView(discord.ui.View):
         )
         return False
 
-    @discord.ui.button(label="Confirm Submit", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="Submit", style=discord.ButtonStyle.success)
     async def confirm_submit(self, interaction: discord.Interaction, button: discord.ui.Button):
         del button
         await submit_tv_report_with_feedback(interaction, self.db, self.cfg, self.payload)
