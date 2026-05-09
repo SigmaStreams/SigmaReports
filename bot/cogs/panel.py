@@ -1113,7 +1113,7 @@ class ReportPanelView(discord.ui.View):
         )
 
     @discord.ui.button(
-        label="Report VOD (Plex/Emby/Jellyfin)",
+        label="Report VOD",
         style=discord.ButtonStyle.secondary,
         emoji="🎬",
         custom_id="panel:report_vod",
