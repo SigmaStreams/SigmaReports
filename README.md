@@ -315,27 +315,27 @@ Example:
 
 ```json
 {
-  "default_provider_id": "ss-tv",
+  "default_provider_id": "provider_a",
   "providers": [
     {
-      "id": "ss-tv",
-      "name": "SS TV",
+      "id": "provider_a",
+      "name": "Provider A",
       "enabled": true,
       "normalize_event_channels": false,
-      "refresh_url_env": "IPTV_REFRESH_URL_SS_TV",
-      "m3u_source": "channels/ss-tv.m3u",
-      "raw_export": "data/providers/ss-tv/iptv_channels.json",
-      "selector_dataset": "data/providers/ss-tv/iptv_channels_selector.json"
+      "refresh_url_env": "IPTV_REFRESH_URL_PROVIDER_A",
+      "m3u_source": "channels/provider_a.m3u",
+      "raw_export": "data/providers/provider_a/iptv_channels.json",
+      "selector_dataset": "data/providers/provider_a/iptv_channels_selector.json"
     },
     {
-      "id": "ia-nebula",
-      "name": "IA Nebula",
-      "enabled": true,
+      "id": "provider_b",
+      "name": "Provider B",
+      "enabled": false,
       "normalize_event_channels": false,
-      "refresh_url_env": "IPTV_REFRESH_URL_IA_NEBULA",
-      "m3u_source": "channels/ia-nebula.m3u",
-      "raw_export": "data/providers/ia-nebula/iptv_channels.json",
-      "selector_dataset": "data/providers/ia-nebula/iptv_channels_selector.json"
+      "refresh_url_env": "IPTV_REFRESH_URL_PROVIDER_B",
+      "m3u_source": "channels/provider_b.m3u",
+      "raw_export": "data/providers/provider_b/iptv_channels.json",
+      "selector_dataset": "data/providers/provider_b/iptv_channels_selector.json"
     }
   ]
 }
@@ -369,21 +369,21 @@ Recommended setup:
 Example `.iptv-refresh.env`:
 
 ```dotenv
-IPTV_REFRESH_URL_SS_TV=https://example.com/get.php?username=user&password=pass&type=m3u_plus&output=mpegts
-IPTV_REFRESH_URL_IA_NEBULA=https://example.com/get.php?username=user&password=pass&type=m3u_plus&output=mpegts
+IPTV_REFRESH_URL_PROVIDER_A=https://example.com/get.php?username=user&password=pass&type=m3u_plus&output=mpegts
+IPTV_REFRESH_URL_PROVIDER_B=https://example.com/get.php?username=user&password=pass&type=m3u_plus&output=mpegts
 ```
 
 Example provider config:
 
 ```json
 {
-  "id": "ss-tv",
-  "name": "SS TV",
+  "id": "provider_a",
+  "name": "Provider A",
   "enabled": true,
-  "refresh_url_env": "IPTV_REFRESH_URL_SS_TV",
-  "m3u_source": "channels/ss-tv.m3u",
-  "raw_export": "data/providers/ss-tv/iptv_channels.json",
-  "selector_dataset": "data/providers/ss-tv/iptv_channels_selector.json"
+  "refresh_url_env": "IPTV_REFRESH_URL_PROVIDER_A",
+  "m3u_source": "channels/provider_a.m3u",
+  "raw_export": "data/providers/provider_a/iptv_channels.json",
+  "selector_dataset": "data/providers/provider_a/iptv_channels_selector.json"
 }
 ```
 
@@ -396,7 +396,7 @@ Run all enabled providers:
 Run one provider only:
 
 ```bash
-./.venv/bin/python scripts/refresh_iptv.py --provider ss-tv
+./.venv/bin/python scripts/refresh_iptv.py --provider provider_a
 ```
 
 By default the script loads `.iptv-refresh.env` if it exists. You can also point it at a different env file:
@@ -452,18 +452,18 @@ If you are using the multi-provider layout, store each playlist under `channels/
 Example:
 
 ```bash
-./.venv/bin/python scripts/build_iptv_json.py --provider ss-tv
-./.venv/bin/python scripts/build_iptv_selector_json.py --provider ss-tv
+./.venv/bin/python scripts/build_iptv_json.py --provider provider_a
+./.venv/bin/python scripts/build_iptv_selector_json.py --provider provider_a
 
-./.venv/bin/python scripts/build_iptv_json.py --provider ia-nebula
-./.venv/bin/python scripts/build_iptv_selector_json.py --provider ia-nebula
+./.venv/bin/python scripts/build_iptv_json.py --provider provider_b
+./.venv/bin/python scripts/build_iptv_selector_json.py --provider provider_b
 ```
 
 For multiple providers, a common layout is:
 
 ```text
-channels/ss-tv.m3u
-channels/ia-nebula.m3u
+channels/provider_a.m3u
+channels/provider_b.m3u
 data/providers/provider_a/iptv_channels.json
 data/providers/provider_a/iptv_channels_selector.json
 data/providers/provider_b/iptv_channels.json
@@ -473,10 +473,10 @@ data/providers/provider_b/iptv_channels_selector.json
 In practice, your provider IDs can be any stable names, for example:
 
 ```text
-data/providers/ss-tv/iptv_channels.json
-data/providers/ss-tv/iptv_channels_selector.json
-data/providers/ia-nebula/iptv_channels.json
-data/providers/ia-nebula/iptv_channels_selector.json
+data/providers/provider_a/iptv_channels.json
+data/providers/provider_a/iptv_channels_selector.json
+data/providers/provider_b/iptv_channels.json
+data/providers/provider_b/iptv_channels_selector.json
 ```
 
 Or inside Docker with:
