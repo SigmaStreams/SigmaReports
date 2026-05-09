@@ -793,6 +793,7 @@ class ResolveReportModal(discord.ui.Modal):
         support_channel_id: int,
         public_updates: bool,
         staff_role_id: int,
+        tickets_category_id: int,
         report_id: int,
         *,
         delete_current_channel: bool = False,
@@ -804,6 +805,7 @@ class ResolveReportModal(discord.ui.Modal):
         self.support_channel_id = int(support_channel_id or 0)
         self.public_updates = bool(public_updates)
         self.staff_role_id = int(staff_role_id or 0)
+        self.tickets_category_id = int(tickets_category_id or 0)
         self.report_id = int(report_id)
         self.delete_current_channel = bool(delete_current_channel)
         self.close_ticket_channel = bool(close_ticket_channel)
@@ -899,7 +901,7 @@ class ResolveReportModal(discord.ui.Modal):
                         support_channel_id=self.support_channel_id,
                         public_updates=self.public_updates,
                         staff_role_id=self.staff_role_id,
-                        tickets_category_id=getattr(self.cfg, "tickets_category_id", 0),
+                        tickets_category_id=self.tickets_category_id,
                     )
                     view.disable_all()
 
@@ -966,6 +968,7 @@ class NotResolvedReportModal(discord.ui.Modal):
         support_channel_id: int,
         public_updates: bool,
         staff_role_id: int,
+        tickets_category_id: int,
         report_id: int,
         *,
         delete_current_channel: bool = False,
@@ -977,6 +980,7 @@ class NotResolvedReportModal(discord.ui.Modal):
         self.support_channel_id = int(support_channel_id or 0)
         self.public_updates = bool(public_updates)
         self.staff_role_id = int(staff_role_id or 0)
+        self.tickets_category_id = int(tickets_category_id or 0)
         self.report_id = int(report_id)
         self.delete_current_channel = bool(delete_current_channel)
         self.close_ticket_channel = bool(close_ticket_channel)
@@ -1067,7 +1071,7 @@ class NotResolvedReportModal(discord.ui.Modal):
                         support_channel_id=self.support_channel_id,
                         public_updates=self.public_updates,
                         staff_role_id=self.staff_role_id,
-                        tickets_category_id=getattr(self.cfg, "tickets_category_id", 0),
+                        tickets_category_id=self.tickets_category_id,
                     )
                     view.disable_all()
 

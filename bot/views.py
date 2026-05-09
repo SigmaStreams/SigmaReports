@@ -141,6 +141,7 @@ class TicketResolveView(discord.ui.View):
             support_channel_id=self.support_channel_id,
             public_updates=self.public_updates,
             staff_role_id=self.staff_role_id,
+            tickets_category_id=self.tickets_category_id,
             report_id=report_id,
             delete_current_channel=True,   # this IS the ticket channel
             close_ticket_channel=False,    # modal will clear DB + delete current channel
@@ -171,6 +172,7 @@ class TicketResolveView(discord.ui.View):
             support_channel_id=self.support_channel_id,
             public_updates=self.public_updates,
             staff_role_id=self.staff_role_id,
+            tickets_category_id=self.tickets_category_id,
             report_id=report_id,
             delete_current_channel=True,   # this IS the ticket channel
             close_ticket_channel=False,    # modal will clear DB + delete current channel
@@ -272,6 +274,7 @@ class ReportActionView(discord.ui.View):
             support_channel_id=self.support_channel_id,
             public_updates=self.public_updates,
             staff_role_id=self.staff_role_id,
+            tickets_category_id=self.tickets_category_id,
             report_id=report_id,
             delete_current_channel=False,  # staff channel message, don't delete this channel
             close_ticket_channel=True,     # close any ticket for this report first
@@ -300,6 +303,7 @@ class ReportActionView(discord.ui.View):
             support_channel_id=self.support_channel_id,
             public_updates=self.public_updates,
             staff_role_id=self.staff_role_id,
+            tickets_category_id=self.tickets_category_id,
             report_id=report_id,
             delete_current_channel=False,  # staff channel message, don't delete this channel
             close_ticket_channel=True,     # close any ticket for this report first
