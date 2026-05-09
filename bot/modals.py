@@ -422,7 +422,7 @@ def _tv_review_message(payload: dict) -> str:
             f"**Category:** {channel_category or 'Unknown'}",
             f"**Issue:** {issue or '—'}",
             "",
-            "Click **Confirm Submit** to send it, or **Edit Report** to make changes.",
+            "Click **Submit** to send it, or **Edit Report** to make changes.",
         ]
     )
     return "\n".join(lines)
