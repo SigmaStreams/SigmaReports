@@ -423,6 +423,8 @@ def _tv_review_message(payload: dict) -> str:
             f"**Issue:** {issue or '—'}",
             "",
             "Click **Submit** to send it, or **Edit Report** to make changes.",
+            "",
+            "**Important:** By clicking **Submit**, you acknowledge that all information provided is accurate. If you notice any errors, click **Edit Report** to fix them before submitting.",
         ]
     )
     return "\n".join(lines)
