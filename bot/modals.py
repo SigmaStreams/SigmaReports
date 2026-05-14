@@ -435,7 +435,7 @@ def _tv_review_message(payload: dict, *, double_confirm_pending: bool = False) -
         lines.extend(
             [
                 "",
-                "**Last chance:** review everything carefully now. If anything is wrong, click **Edit Report** before you press **Confirm and Submit**.",
+                "**Last Chance:** Review everything carefully now. If anything is wrong, click **Edit Report** before you press **Confirm and Submit**.",
             ]
         )
     return "\n".join(lines)
