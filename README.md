@@ -159,9 +159,11 @@ Optional settings:
 - `TV_STAFF_PING_USER_IDS`
 - `VOD_STAFF_PING_USER_IDS`
 - `PUBLIC_UPDATES`
+- `DOUBLE_CONFIRMATION`
 
 Notes:
 - Split TV and VOD ping lists fall back to `STAFF_PING_USER_IDS` if the split lists are empty.
+- `DOUBLE_CONFIRMATION=true` makes the Live TV review screen require a second press of `Submit` before the report is actually sent.
 - `TICKETS_CATEGORY_ID` controls which category new ticket channels are created under. If it is empty, tickets are created without a category.
 - Runtime data is stored under `./data` by default.
 - Do not commit `.env`.
