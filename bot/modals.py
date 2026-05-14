@@ -407,7 +407,7 @@ async def submit_tv_report_with_feedback(
     return int(report_id)
 
 
-def _tv_review_message(payload: dict) -> str:
+def _tv_review_message(payload: dict, *, double_confirm_pending: bool = False) -> str:
     provider = str(payload.get("provider_name") or payload.get("provider_id") or "").strip()
     channel_name = str(payload.get("channel_name") or "Unknown").strip()
     channel_category = str(payload.get("channel_category") or "Unknown").strip()
@@ -422,24 +422,44 @@ def _tv_review_message(payload: dict) -> str:
             f"**Category:** {channel_category or 'Unknown'}",
             f"**Issue:** {issue or '—'}",
             "",
-            "Click **Submit** to send it, or **Edit Report** to make changes.",
+            (
+                "Click **Submit** again to send it, or **Edit Report** to make changes."
+                if double_confirm_pending
+                else "Click **Submit** to send it, or **Edit Report** to make changes."
+            ),
             "",
             "**Important:** By clicking **Submit**, you acknowledge that all information provided is accurate. If you notice any errors, click **Edit Report** to fix them before submitting.",
         ]
     )
+    if double_confirm_pending:
+        lines.extend(
+            [
+                "",
+                "**Last chance:** review everything carefully now. If anything is wrong, click **Edit Report** before you press **Confirm and Submit**.",
+            ]
+        )
     return "\n".join(lines)
 
 
 class TVReportReviewView(discord.ui.View):
-    def __init__(self, db: ReportDB, cfg, requester_id: int, payload: dict):
+    def __init__(self, db: ReportDB, cfg, requester_id: int, payload: dict, *, double_confirm_pending: bool = False):
         super().__init__(timeout=300)
         self.db = db
         self.cfg = cfg
         self.requester_id = int(requester_id)
         self.payload = dict(payload)
+        self.double_confirm_enabled = bool(getattr(cfg, "double_confirmation", False))
+        self.double_confirm_pending = bool(double_confirm_pending)
+
+        if self.double_confirm_pending:
+            self.confirm_submit.label = "Confirm and Submit"
+            self.confirm_submit.style = discord.ButtonStyle.danger
+        else:
+            self.confirm_submit.label = "Submit"
+            self.confirm_submit.style = discord.ButtonStyle.success
 
     def message_content(self) -> str:
-        return _tv_review_message(self.payload)
+        return _tv_review_message(self.payload, double_confirm_pending=self.double_confirm_pending)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id == self.requester_id:
@@ -454,6 +474,25 @@ class TVReportReviewView(discord.ui.View):
     @discord.ui.button(label="Submit", style=discord.ButtonStyle.success)
     async def confirm_submit(self, interaction: discord.Interaction, button: discord.ui.Button):
         del button
+        if self.double_confirm_enabled and not self.double_confirm_pending:
+            await interaction.response.edit_message(
+                content=TVReportReviewView(
+                    self.db,
+                    self.cfg,
+                    self.requester_id,
+                    self.payload,
+                    double_confirm_pending=True,
+                ).message_content(),
+                view=TVReportReviewView(
+                    self.db,
+                    self.cfg,
+                    self.requester_id,
+                    self.payload,
+                    double_confirm_pending=True,
+                ),
+            )
+            return
+
         await submit_tv_report_with_feedback(interaction, self.db, self.cfg, self.payload)
 
     @discord.ui.button(label="Edit Report", style=discord.ButtonStyle.secondary)

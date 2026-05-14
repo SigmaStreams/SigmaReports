@@ -37,6 +37,7 @@ class Config:
     staff_ping_user_ids: list[int]
 
     public_updates: bool
+    double_confirmation: bool
     db_path: str
     tmdb_bearer_token: str
     staff_role_id: int
@@ -78,6 +79,7 @@ def load_config() -> Config:
         vod_staff_ping_user_ids = staff_ping_user_ids
 
     public_updates = _get_bool("PUBLIC_UPDATES", True)
+    double_confirmation = _get_bool("DOUBLE_CONFIRMATION", False)
     db_path = os.getenv("DB_PATH", "./data/reports.sqlite3").strip()
     tmdb_bearer_token = os.getenv("TMDB_BEARER_TOKEN", "").strip()
 
@@ -102,6 +104,7 @@ def load_config() -> Config:
         vod_staff_ping_user_ids=vod_staff_ping_user_ids,
         staff_ping_user_ids=staff_ping_user_ids,
         public_updates=public_updates,
+        double_confirmation=double_confirmation,
         db_path=db_path,
         tmdb_bearer_token=tmdb_bearer_token,
         staff_role_id=staff_role_id,
