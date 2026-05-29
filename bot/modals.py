@@ -696,6 +696,7 @@ def _new_vod_state() -> dict:
         "requested_via_bot": "",
         "title": "",
         "language": "",
+        "device": "",
         "reference_link": "",
         "is_4k": "",
         "content_type": "",
@@ -754,6 +755,12 @@ class _VODCombinedTextModal(discord.ui.Modal, title="VOD Text Questions"):
             max_length=150,
             default=(self.state.get("title") or None),
         )
+        self.device = discord.ui.TextInput(
+            label="What device are you using?",
+            placeholder="Example: Firestick 4K, iPhone 15, LG WebOS TV",
+            max_length=150,
+            default=(self.state.get("device") or None),
+        )
         self.reference_link = discord.ui.TextInput(
             label="TMDB or TVDB link",
             placeholder=_vod_reference_placeholder(self.state.get("content_type") or ""),
@@ -769,11 +776,13 @@ class _VODCombinedTextModal(discord.ui.Modal, title="VOD Text Questions"):
         )
 
         self.add_item(self.title_name)
+        self.add_item(self.device)
         self.add_item(self.reference_link)
         self.add_item(self.issue)
 
     async def on_submit(self, interaction: discord.Interaction):
         self.state["title"] = str(self.title_name).strip()
+        self.state["device"] = str(self.device).strip()
         self.state["reference_link"] = str(self.reference_link).strip()
         self.state["issue"] = str(self.issue).strip()
 
@@ -793,6 +802,7 @@ class _VODCombinedTextModal(discord.ui.Modal, title="VOD Text Questions"):
             "requested_via_bot": self.state["requested_via_bot"],
             "title": self.state["title"],
             "language": self.state["language"],
+            "device": self.state["device"],
             "reference_link": self.state["reference_link"],
             "is_4k": self.state["is_4k"],
             "content_type": self.state["content_type"],
