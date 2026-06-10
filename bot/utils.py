@@ -107,6 +107,11 @@ def _vod_4k_label(payload: dict) -> str:
     return "Not provided"
 
 
+def _vod_remux_label(payload: dict) -> str:
+    value = str((payload or {}).get("is_remux") or "").strip()
+    return value or "Not provided"
+
+
 def _iso_to_discord_ts(iso: Optional[str]) -> Optional[str]:
     if not iso:
         return None
@@ -189,6 +194,7 @@ def build_staff_embed(
         language = _vod_language_label(payload)
         device = _vod_device_label(payload)
         is_4k = _vod_4k_label(payload)
+        is_remux = _vod_remux_label(payload)
         content_type = _vod_type_label(payload)
         issue = (payload or {}).get("issue") or "—"
 
@@ -202,6 +208,8 @@ def build_staff_embed(
             embed.add_field(name=ref[0], value=ref[1], inline=True)
 
         embed.add_field(name="4K Title", value=str(is_4k), inline=True)
+        if str((payload or {}).get("is_remux") or "").strip():
+            embed.add_field(name="Remux", value=str(is_remux), inline=True)
         embed.add_field(name="Movie or TV Show", value=str(content_type), inline=True)
 
         embed.add_field(name="Issue", value=str(issue), inline=False)
