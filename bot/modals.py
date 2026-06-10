@@ -699,6 +699,7 @@ def _new_vod_state() -> dict:
         "device": "",
         "reference_link": "",
         "is_4k": "",
+        "is_remux": "",
         "content_type": "",
         "issue": "",
     }
@@ -805,6 +806,7 @@ class _VODCombinedTextModal(discord.ui.Modal, title="VOD Text Questions"):
             "device": self.state["device"],
             "reference_link": self.state["reference_link"],
             "is_4k": self.state["is_4k"],
+            "is_remux": self.state["is_remux"],
             "content_type": self.state["content_type"],
             "quality": "4K" if self.state["is_4k"] == "Yes" else "Non-4K",
             "issue": self.state["issue"],
@@ -958,6 +960,35 @@ class _VOD4KQuestionView(_VODStepView):
 
     async def handle_selection(self, interaction: discord.Interaction, value: str):
         self.state["is_4k"] = _normalize_vod_4k(value)
+        if getattr(self.cfg, "remux", False):
+            return await interaction.response.edit_message(
+                content="Is this title a remux?",
+                view=_VODRemuxQuestionView(self.db, self.cfg, self.requester_id, self.state),
+            )
+
+        await interaction.response.edit_message(
+            content="Is this a movie, or TV show?",
+            view=_VODContentTypeQuestionView(self.db, self.cfg, self.requester_id, self.state),
+        )
+
+
+class _VODRemuxButton(discord.ui.Button):
+    def __init__(self, *, label: str, value: str, style: discord.ButtonStyle):
+        super().__init__(label=label, style=style)
+        self.value = value
+
+    async def callback(self, interaction: discord.Interaction):
+        await self.view.handle_selection(interaction, self.value)
+
+
+class _VODRemuxQuestionView(_VODStepView):
+    def __init__(self, db: ReportDB, cfg, requester_id: int, state: dict):
+        super().__init__(db, cfg, requester_id, state)
+        self.add_item(_VODRemuxButton(label="Yes", value="Yes", style=discord.ButtonStyle.success))
+        self.add_item(_VODRemuxButton(label="No", value="No", style=discord.ButtonStyle.secondary))
+
+    async def handle_selection(self, interaction: discord.Interaction, value: str):
+        self.state["is_remux"] = value
         await interaction.response.edit_message(
             content="Is this a movie, or TV show?",
             view=_VODContentTypeQuestionView(self.db, self.cfg, self.requester_id, self.state),

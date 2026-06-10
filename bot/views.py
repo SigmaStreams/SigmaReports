@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import discord
 
 from bot.db import ReportDB
-from bot.utils import _vod_4k_label, _vod_device_label, _vod_language_label, _vod_requested_label, _vod_type_label, build_staff_embed, report_subject, try_dm
+from bot.utils import _vod_4k_label, _vod_device_label, _vod_language_label, _vod_remux_label, _vod_requested_label, _vod_type_label, build_staff_embed, report_subject, try_dm
 
 
 CLOSED_STATUSES = {"Resolved", "Can't replicate", "Fixed", "Not Resolved"}
@@ -65,6 +65,7 @@ def _build_ticket_embed(report: dict, reporter: discord.abc.User, guild: discord
         language = _vod_language_label(payload)
         device = _vod_device_label(payload)
         is_4k = _vod_4k_label(payload)
+        is_remux = _vod_remux_label(payload)
         content_type_label = _vod_type_label(payload)
 
         issue = (payload.get("issue") or "—").strip()
@@ -80,6 +81,8 @@ def _build_ticket_embed(report: dict, reporter: discord.abc.User, guild: discord
             embed.add_field(name="Reference", value=f"[{label}]({ref})", inline=True)
 
         embed.add_field(name="4K Title", value=is_4k, inline=True)
+        if str(payload.get("is_remux") or "").strip():
+            embed.add_field(name="Remux", value=is_remux, inline=True)
         embed.add_field(name="Movie or TV Show", value=content_type_label, inline=True)
 
         embed.add_field(name="Issue", value=issue[:1024] if issue else "—", inline=False)
