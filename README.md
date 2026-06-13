@@ -304,9 +304,9 @@ Provider registry changes do not need to be manual. Use the management helper to
 ```bash
 ./.venv/bin/python scripts/manage_providers.py
 ./.venv/bin/python scripts/manage_providers.py list
-./.venv/bin/python scripts/manage_providers.py add provider_c --name "Provider C" --disable
-./.venv/bin/python scripts/manage_providers.py update provider_c --enable --normalize-event-channels
-./.venv/bin/python scripts/manage_providers.py remove provider_c
+./.venv/bin/python scripts/manage_providers.py add provider_b --name "Provider B" --disable
+./.venv/bin/python scripts/manage_providers.py update provider_b --enable --normalize-event-channels
+./.venv/bin/python scripts/manage_providers.py remove provider_b
 ```
 
 Running the script without arguments opens an interactive menu for listing, adding, editing, removing, or setting the default provider.

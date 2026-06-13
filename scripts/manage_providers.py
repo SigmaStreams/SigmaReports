@@ -34,7 +34,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     list_parser.set_defaults(handler=handle_list)
 
     add_parser = subparsers.add_parser("add", help="Add a provider and scaffold its directories.")
-    add_parser.add_argument("provider_id", help="Stable provider ID such as ss-tv.")
+    add_parser.add_argument("provider_id", help="Stable provider ID such as provider_a.")
     add_parser.add_argument("--name", help="Display name shown in the bot.")
     add_parser.add_argument("--refresh-url-env", help="Override the playlist refresh env var name.")
     add_parser.add_argument("--m3u-source", help="Override the provider M3U path.")
