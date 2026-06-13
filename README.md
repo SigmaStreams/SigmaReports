@@ -299,6 +299,20 @@ To rebuild assets for a specific configured provider instead, use:
 
 This works even if that provider is currently disabled in `providers.json`; the build scripts resolve configured providers, not only enabled ones.
 
+Provider registry changes do not need to be manual. Use the management helper to add, edit, or remove providers and scaffold the expected paths:
+
+```bash
+./.venv/bin/python scripts/manage_providers.py
+./.venv/bin/python scripts/manage_providers.py list
+./.venv/bin/python scripts/manage_providers.py add provider_c --name "Provider C" --disable
+./.venv/bin/python scripts/manage_providers.py update provider_c --enable --normalize-event-channels
+./.venv/bin/python scripts/manage_providers.py remove provider_c
+```
+
+Running the script without arguments opens an interactive menu for listing, adding, editing, removing, or setting the default provider.
+
+By default it writes to `providers.json`, creates `channels/<provider-id>.m3u`, and uses the standard per-provider dataset paths under `data/providers/<provider-id>/`. Use `--m3u-source`, `--raw-export`, or `--selector-dataset` to override those paths. Use `remove --delete-files` to also delete the provider's scaffolded files.
+
 ## Multi-Provider Setup
 
 `providers.json` is the runtime registry for provider-aware Live TV reporting.
