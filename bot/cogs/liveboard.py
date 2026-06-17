@@ -39,6 +39,10 @@ def _ts(dt: Optional[datetime]) -> str:
     return f"<t:{int(dt.timestamp())}:R>"
 
 
+def _normalized_provider(value: object) -> str:
+    return str(value or "").strip().lower()
+
+
 class LiveboardCog(commands.Cog):
     def __init__(self, bot, db, cfg):
         self.bot = bot
@@ -78,6 +82,46 @@ class LiveboardCog(commands.Cog):
             parts.append(f"[staff]({link})")
         return " • ".join(parts)
 
+    def _tv_provider_bucket(self, r: dict) -> str:
+        payload = r.get("payload") or {}
+        provider_name = _normalized_provider(payload.get("provider_name"))
+        provider_id = _normalized_provider(payload.get("provider_id"))
+
+        # Keep SS TV and SS TV+ explicitly separate in the liveboard.
+        if provider_name in {"ss tv+", "ss tv plus"} or provider_id in {"ss-tv+", "ss-tv-plus", "sstv+"}:
+            return "SS TV+"
+        if provider_name == "ss tv" or provider_id == "ss-tv":
+            return "SS TV"
+
+        if provider_name:
+            return str(payload.get("provider_name")).strip()
+        if provider_id:
+            return str(payload.get("provider_id")).strip()
+        return "Other IPTV"
+
+    def _add_tv_fields(self, embed: discord.Embed, guild_id: int, tv_rows: list[dict]) -> None:
+        if not tv_rows:
+            embed.add_field(name="📺 IPTV", value="No active IPTV reports.", inline=False)
+            return
+
+        buckets: dict[str, list[dict]] = {}
+        ordered_bucket_names: list[str] = ["SS TV", "SS TV+"]
+
+        for row in tv_rows:
+            bucket = self._tv_provider_bucket(row)
+            if bucket not in buckets:
+                buckets[bucket] = []
+                if bucket not in ordered_bucket_names:
+                    ordered_bucket_names.append(bucket)
+            buckets[bucket].append(row)
+
+        for bucket_name in ordered_bucket_names:
+            rows = buckets.get(bucket_name) or []
+            if not rows:
+                continue
+            lines = [self._format_row(guild_id, r) for r in rows[:20]]
+            embed.add_field(name=f"📺 IPTV — {bucket_name}", value="\n".join(lines), inline=False)
+
     def build_liveboard_embed(self, guild_id: int, tv_rows: list[dict], vod_rows: list[dict]) -> discord.Embed:
         embed = discord.Embed(
             title="📡 Liveboard — Active Reports",
@@ -96,11 +140,7 @@ class LiveboardCog(commands.Cog):
             )
             return embed
 
-        if tv_rows:
-            lines = [self._format_row(guild_id, r) for r in tv_rows[:20]]
-            embed.add_field(name="📺 IPTV", value="\n".join(lines), inline=False)
-        else:
-            embed.add_field(name="📺 IPTV", value="No active IPTV reports.", inline=False)
+        self._add_tv_fields(embed, guild_id, tv_rows)
 
         if vod_rows:
             lines = [self._format_row(guild_id, r) for r in vod_rows[:20]]
