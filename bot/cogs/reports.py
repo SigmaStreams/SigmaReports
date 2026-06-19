@@ -478,6 +478,97 @@ class Reports(commands.Cog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     # ----------------------------
+    # Resend
+    # ----------------------------
+
+    @app_commands.command(
+        name="reportresend",
+        description="Post a report that was never sent to the staff channel (staff only).",
+    )
+    @app_commands.describe(report_id="The numeric report ID (e.g. 151)")
+    async def reportresend(self, interaction: discord.Interaction, report_id: int):
+        if not interaction.guild:
+            return await interaction.response.send_message(
+                "This must be used in a server.",
+                ephemeral=True,
+            )
+
+        if not self._is_staff(interaction):
+            return await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
+
+        report = self.db.get_report_by_id(report_id)
+        if not report or int(report.get("guild_id", 0)) != interaction.guild.id:
+            return await interaction.response.send_message("❌ Report not found.", ephemeral=True)
+
+        if report.get("staff_message_id"):
+            return await interaction.response.send_message(
+                f"❌ Report **#{report_id}** already has a staff message. Use `/reportreactivate` instead.",
+                ephemeral=True,
+            )
+
+        staff_ch = interaction.guild.get_channel(self.cfg.staff_channel_id)
+        if not isinstance(staff_ch, discord.TextChannel):
+            return await interaction.response.send_message("❌ Staff channel not found.", ephemeral=True)
+
+        try:
+            reporter = await interaction.client.fetch_user(int(report["reporter_id"]))
+        except Exception:
+            reporter = interaction.client.get_user(int(report["reporter_id"])) or interaction.user
+
+        source = interaction.guild.get_channel(int(report["source_channel_id"])) or staff_ch
+        report_type = str(report.get("report_type") or "").strip()
+        ticket_channel_id = report.get("ticket_channel_id")
+
+        embed = build_staff_embed(
+            int(report["id"]),
+            report_type,
+            reporter,
+            source,
+            report["payload"],
+            str(report.get("status") or "Open"),
+            ticket_channel_id=int(ticket_channel_id) if ticket_channel_id else None,
+            claimed_by_user_id=report.get("claimed_by_user_id"),
+            claimed_at=report.get("claimed_at"),
+            resolved_by_id=report.get("resolved_by"),
+            resolved_note=report.get("resolved_note"),
+        )
+
+        view = ReportActionView(
+            self.db,
+            self.cfg.staff_channel_id,
+            self.cfg.support_channel_id,
+            self.cfg.public_updates,
+            self.cfg.staff_role_id,
+            self.cfg.tickets_category_id,
+        )
+
+        from bot.modals import build_staff_ping, _get_ping_ids_for_report
+        ping_text = ""
+        if self.db.get_report_pings_enabled():
+            ping_ids = _get_ping_ids_for_report(self.cfg, report_type.lower())
+            ping_text = build_staff_ping(ping_ids)
+
+        try:
+            msg = await staff_ch.send(content=ping_text, embed=embed, view=view)
+        except discord.Forbidden:
+            return await interaction.response.send_message(
+                "❌ Missing permissions to send in the staff channel.",
+                ephemeral=True,
+            )
+        except Exception as e:
+            return await interaction.response.send_message(
+                f"❌ Failed to send: {e}",
+                ephemeral=True,
+            )
+
+        self.db.set_staff_message_id(report_id, msg.id)
+
+        await interaction.response.send_message(
+            f"✅ Report **#{report_id}** has been posted to {staff_ch.mention}.",
+            ephemeral=True,
+        )
+
+    # ----------------------------
     # Reactivate
     # ----------------------------
 
