@@ -478,6 +478,72 @@ class Reports(commands.Cog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     # ----------------------------
+    # Close report
+    # ----------------------------
+
+    @app_commands.command(
+        name="closereport",
+        description="Close a report by ID (staff only).",
+    )
+    @app_commands.describe(
+        report_id="The numeric report ID (e.g. 151)",
+        action="How to close the report",
+    )
+    @app_commands.choices(action=[
+        app_commands.Choice(name="Resolved", value="resolved"),
+        app_commands.Choice(name="Not Resolved", value="not_resolved"),
+    ])
+    async def closereport(self, interaction: discord.Interaction, report_id: int, action: str):
+        if not interaction.guild:
+            return await interaction.response.send_message(
+                "This must be used in a server.",
+                ephemeral=True,
+            )
+
+        if not self._is_staff(interaction):
+            return await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
+
+        report = self.db.get_report_by_id(report_id)
+        if not report or int(report.get("guild_id", 0)) != interaction.guild.id:
+            return await interaction.response.send_message("❌ Report not found.", ephemeral=True)
+
+        current_status = str(report.get("status") or "").strip()
+        if current_status in {"Resolved", "Not Resolved"}:
+            return await interaction.response.send_message(
+                f"⚠️ Report **#{report_id}** is already closed (`{current_status}`).",
+                ephemeral=True,
+            )
+
+        from bot.modals import ResolveReportModal, NotResolvedReportModal
+
+        if action == "resolved":
+            modal = ResolveReportModal(
+                db=self.db,
+                staff_channel_id=self.cfg.staff_channel_id,
+                support_channel_id=self.cfg.support_channel_id,
+                public_updates=self.cfg.public_updates,
+                staff_role_id=self.cfg.staff_role_id,
+                tickets_category_id=self.cfg.tickets_category_id,
+                report_id=report_id,
+                delete_current_channel=False,
+                close_ticket_channel=True,
+            )
+        else:
+            modal = NotResolvedReportModal(
+                db=self.db,
+                staff_channel_id=self.cfg.staff_channel_id,
+                support_channel_id=self.cfg.support_channel_id,
+                public_updates=self.cfg.public_updates,
+                staff_role_id=self.cfg.staff_role_id,
+                tickets_category_id=self.cfg.tickets_category_id,
+                report_id=report_id,
+                delete_current_channel=False,
+                close_ticket_channel=True,
+            )
+
+        await interaction.response.send_modal(modal)
+
+    # ----------------------------
     # Resend
     # ----------------------------
 
