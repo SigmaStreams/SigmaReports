@@ -54,7 +54,7 @@ DEFAULT_GUILD_ID_FOR_SYNC = 1457559352717086917
 class SigmaReportsBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
-        super().__init__(command_prefix="!", intents=intents)
+        super().__init__(command_prefix=commands.when_mentioned, intents=intents)
 
         self.cfg = load_config()
         self.db = ReportDB(self.cfg.db_path)
