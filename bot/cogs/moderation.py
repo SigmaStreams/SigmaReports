@@ -1,9 +1,77 @@
+import asyncio
+import contextlib
+import io
+import textwrap
+import traceback
+
 import discord
 from discord import app_commands
 from discord.ext import commands
 from datetime import datetime, timezone
 
 OWNER_ID = 1229271933736976395
+
+
+class EvalModal(discord.ui.Modal, title="Eval"):
+    code = discord.ui.TextInput(
+        label="Code",
+        style=discord.TextStyle.paragraph,
+        placeholder="Enter Python code…",
+        required=True,
+        max_length=2000,
+    )
+
+    def __init__(self, bot, db, cfg):
+        super().__init__()
+        self._bot = bot
+        self._db = db
+        self._cfg = cfg
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        code = self.code.value
+        env = {
+            "bot": self._bot,
+            "db": self._db,
+            "cfg": self._cfg,
+            "interaction": interaction,
+            "guild": interaction.guild,
+            "channel": interaction.channel,
+            "discord": discord,
+            "asyncio": asyncio,
+        }
+
+        # Wrap in an async function so await works at top level
+        wrapped = "async def _eval_body():\n" + textwrap.indent(code, "    ")
+
+        stdout = io.StringIO()
+        result = None
+        error = None
+        try:
+            exec(compile(wrapped, "<eval>", "exec"), env)  # noqa: S102
+            with contextlib.redirect_stdout(stdout):
+                result = await env["_eval_body"]()
+        except Exception:
+            error = traceback.format_exc()
+
+        output_parts = []
+        printed = stdout.getvalue()
+        if printed:
+            output_parts.append(printed.rstrip())
+        if result is not None:
+            output_parts.append(repr(result))
+        if error:
+            output_parts.append(f"ERROR:\n{error.rstrip()}")
+
+        output = "\n".join(output_parts) if output_parts else "(no output)"
+
+        # Truncate to fit in a code block within Discord's 2000-char limit
+        max_len = 1950
+        if len(output) > max_len:
+            output = output[:max_len] + "\n… (truncated)"
+
+        await interaction.followup.send(f"```py\n{output}\n```", ephemeral=True)
 
 
 def _iso_to_discord_ts(iso: str) -> str:
@@ -149,6 +217,20 @@ class Moderation(commands.Cog):
             description="\n".join(lines) + extra,
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    # ----------------------------
+    # Owner: eval
+    # ----------------------------
+
+    @app_commands.command(
+        name="eval",
+        description="Run arbitrary Python code (owner only).",
+    )
+    async def eval_cmd(self, interaction: discord.Interaction):
+        if interaction.user.id != OWNER_ID:
+            return await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
+
+        await interaction.response.send_modal(EvalModal(self.bot, self.db, self.cfg))
 
 
 async def setup(bot):
