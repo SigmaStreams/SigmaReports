@@ -17,6 +17,22 @@ def _try_parse_iso(s: Optional[str]) -> Optional[datetime]:
         return None
 
 
+def _normalize_text(value: object) -> str:
+    return str(value or "").strip().casefold()
+
+
+def _tv_provider_key(payload: dict) -> str:
+    provider_id = _normalize_text(payload.get("provider_id"))
+    if provider_id:
+        return f"id:{provider_id}"
+
+    provider_name = _normalize_text(payload.get("provider_name"))
+    if provider_name:
+        return f"name:{provider_name}"
+
+    return ""
+
+
 class ReportDB:
     def __init__(self, path: str):
         self.path = path
@@ -305,6 +321,33 @@ class ReportDB:
             )
 
         return [self._row_to_report(r) for r in cur.fetchall() if r]
+
+    def find_active_tv_report_by_provider_channel(
+        self,
+        guild_id: int,
+        payload: dict,
+        closed_statuses: Optional[Iterable[str]] = None,
+    ) -> Optional[dict]:
+        closed = closed_statuses or {"Resolved", "Not Resolved"}
+        target_provider = _tv_provider_key(payload)
+        target_channel = _normalize_text(payload.get("channel_name"))
+
+        if not target_provider or not target_channel:
+            return None
+
+        reports = self.list_active_reports(int(guild_id), closed_statuses=closed)
+        for report in reports:
+            if str(report.get("report_type") or "").strip().upper() != "TV":
+                continue
+
+            existing_payload = report.get("payload") or {}
+            if _tv_provider_key(existing_payload) != target_provider:
+                continue
+            if _normalize_text(existing_payload.get("channel_name")) != target_channel:
+                continue
+            return report
+
+        return None
 
     # ---------------- Ticket helpers ----------------
 

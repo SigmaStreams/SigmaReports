@@ -387,6 +387,30 @@ async def submit_tv_report_with_feedback(
     cfg,
     payload: dict,
 ) -> int:
+    duplicate_report = db.find_active_tv_report_by_provider_channel(
+        interaction.guild.id,
+        payload,
+    )
+    if duplicate_report:
+        duplicate_id = int(duplicate_report.get("id") or 0)
+        duplicate_message = (
+            f"⚠️ That channel is already reported for this provider (report **#{duplicate_id}**). "
+            "Please wait for staff to resolve it before submitting again."
+        )
+
+        try:
+            await interaction.response.edit_message(content=duplicate_message, view=None)
+            return duplicate_id
+        except Exception:
+            pass
+
+        if interaction.response.is_done():
+            await interaction.followup.send(duplicate_message, ephemeral=True)
+            return duplicate_id
+
+        await interaction.response.send_message(duplicate_message, ephemeral=True)
+        return duplicate_id
+
     report_id = await _submit_tv_report(interaction, db, cfg, payload)
     success_message = (
         f"✅ Submitted IPTV report **#{report_id}** for **{payload['channel_name']}**"
