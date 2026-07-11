@@ -41,6 +41,7 @@ class Config:
     remux: bool
     db_path: str
     tmdb_bearer_token: str
+    tvdb_key: str
     staff_role_id: int
     modlogs_channel_id: int
     responses_channel_id: int
@@ -84,6 +85,7 @@ def load_config() -> Config:
     remux = _get_bool("REMUX", False)
     db_path = os.getenv("DB_PATH", "./data/reports.sqlite3").strip()
     tmdb_bearer_token = os.getenv("TMDB_BEARER_TOKEN", "").strip()
+    tvdb_key = os.getenv("TVDB_KEY", "").strip()
 
     staff_role_id = int(os.getenv("STAFF_ROLE_ID", "0"))
     if staff_role_id <= 0:
@@ -110,6 +112,7 @@ def load_config() -> Config:
         remux=remux,
         db_path=db_path,
         tmdb_bearer_token=tmdb_bearer_token,
+        tvdb_key=tvdb_key,
         staff_role_id=staff_role_id,
         modlogs_channel_id=modlogs_channel_id,
         transcripts_channel_id=transcripts_channel_id,

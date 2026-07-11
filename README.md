@@ -55,10 +55,12 @@ Docker is the recommended setup because it avoids local Python version drift, us
 ### VOD flow
 - Uses a guided questionnaire instead of a single freeform form.
 - Collects whether the title was requested through the Requests Bot.
-- Collects language, 4K status, and whether the title is a movie or TV show.
-- Validates reference links for:
-  - TMDB movie links for movies
-  - TheTVDB series links for TV shows
+- Collects language and 4K status, then asks for a title search.
+- Lets users select the correct title from TMDB/TVDB search results in a dropdown.
+- Automatically determines whether the selected result is a movie or TV show.
+- Automatically stores the reference link from the selected source:
+  - TMDB links for movies
+  - TheTVDB links for TV shows
 - Finishes with issue details and sends the report to staff.
 
 ### Staff workflow
@@ -155,6 +157,7 @@ Optional settings:
 - `TRANSCRIPTS_CHANNEL_ID`
 - `DB_PATH`
 - `TMDB_BEARER_TOKEN`
+- `TVDB_KEY`
 - `STAFF_PING_USER_IDS`
 - `TV_STAFF_PING_USER_IDS`
 - `VOD_STAFF_PING_USER_IDS`
