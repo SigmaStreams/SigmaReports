@@ -875,15 +875,15 @@ def _build_vod_payload(state: dict) -> dict:
     }
 
 
-def _build_vod_selected_embed(item: dict) -> discord.Embed:
-    label = _vod_result_label(item)
-    source = "TMDB" if str(item.get("source_db") or "").strip() == "tmdb" else "TVDB"
-    content_type = "Movie" if str(item.get("content_type") or "").strip() == "movie" else "TV Show"
-    year = str(item.get("year") or "").strip()
+def _build_vod_question_embed(data: dict, prompt: str) -> discord.Embed:
+    label = _vod_result_label(data)
+    source = "TMDB" if str(data.get("source_db") or "").strip() == "tmdb" else "TVDB"
+    content_type = "Movie" if str(data.get("content_type") or "").strip() == "movie" else "TV Show"
+    year = str(data.get("year") or data.get("title_year") or "").strip()
 
     embed = discord.Embed(
         title="Selected Title",
-        description="Was this title requested through the Requests Bot?",
+        description=prompt,
     )
     embed.add_field(name="Title", value=label, inline=False)
     embed.add_field(name="Source", value=source, inline=True)
@@ -891,7 +891,7 @@ def _build_vod_selected_embed(item: dict) -> discord.Embed:
     if year:
         embed.add_field(name="Year", value=year, inline=True)
 
-    poster_url = str(item.get("poster_url") or "").strip()
+    poster_url = str(data.get("poster_url") or "").strip()
     if poster_url:
         embed.set_thumbnail(url=poster_url)
 
@@ -955,6 +955,7 @@ class _VODDetailsModal(discord.ui.Modal, title="VOD Report Details"):
         report_id = await _submit_vod_report(interaction, self.db, self.cfg, payload)
         await interaction.response.edit_message(
             content=f"✅ Submitted VOD report **#{report_id}** for **{payload['title']}**.",
+            embed=None,
             view=None,
         )
 
@@ -1058,7 +1059,8 @@ class _VODRequestedQuestionView(_VODStepView):
     async def handle_selection(self, interaction: discord.Interaction, value: str):
         self.state["requested_via_bot"] = value
         await interaction.response.edit_message(
-            content="English or Foreign?",
+            content=None,
+            embed=_build_vod_question_embed(self.state, "English or Foreign?"),
             view=_VODLanguageQuestionView(self.db, self.cfg, self.requester_id, self.state),
         )
 
@@ -1080,7 +1082,8 @@ class _VODLanguageQuestionView(_VODStepView):
     async def handle_selection(self, interaction: discord.Interaction, value: str):
         self.state["language"] = _normalize_vod_language(value)
         await interaction.response.edit_message(
-            content="Is this a 4K title?",
+            content=None,
+            embed=_build_vod_question_embed(self.state, "Is this a 4K title?"),
             view=_VOD4KQuestionView(self.db, self.cfg, self.requester_id, self.state),
         )
 
@@ -1103,7 +1106,8 @@ class _VOD4KQuestionView(_VODStepView):
         self.state["is_4k"] = _normalize_vod_4k(value)
         if getattr(self.cfg, "remux", False):
             return await interaction.response.edit_message(
-                content="Is this title a remux?",
+                content=None,
+                embed=_build_vod_question_embed(self.state, "Is this title a remux?"),
                 view=_VODRemuxQuestionView(self.db, self.cfg, self.requester_id, self.state),
             )
 
@@ -1289,7 +1293,7 @@ class _VODManualEntryModal(discord.ui.Modal, title="Manual Entry"):
 
         self.state["title_query"] = self.state.get("title_query") or str(item.get("title") or "").strip()
         updated_state = _apply_vod_selected_item(self.state, item)
-        embed = _build_vod_selected_embed(item)
+        embed = _build_vod_question_embed(item, "Was this title requested through the Requests Bot?")
 
         try:
             await self.launcher_interaction.edit_original_response(
@@ -1534,7 +1538,7 @@ class _VODTitleResultsView(_VODStepView):
             return await interaction.response.send_message("❌ Invalid title selection.", ephemeral=True)
 
         _apply_vod_selected_item(self.state, item)
-        embed = _build_vod_selected_embed(item)
+        embed = _build_vod_question_embed(item, "Was this title requested through the Requests Bot?")
         await interaction.response.edit_message(
             content=None,
             embed=embed,
