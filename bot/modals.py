@@ -742,10 +742,10 @@ def _vod_title_placeholder() -> str:
 
 
 def _vod_result_label(item: dict) -> str:
-    kind = "Movie" if str(item.get("content_type") or "") == "movie" else "TV"
+    title = str(item.get("title") or "Unknown").strip()
     year = str(item.get("year") or "").strip()
     suffix = f" ({year})" if year else ""
-    return f"{kind}: {str(item.get('title') or 'Unknown').strip()}{suffix}"
+    return f"{title}{suffix}"
 
 
 VOD_TITLE_PAGE_SIZE = 25
