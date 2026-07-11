@@ -8,7 +8,7 @@ import discord
 from bot.db import ReportDB
 from bot.tmdb import resolve_tmdb_movie_link, search_tmdb_movies
 from bot.tvdb import resolve_tvdb_series_link, search_tvdb_series
-from bot.utils import build_staff_embed, report_subject, try_dm
+from bot.utils import build_staff_embed, report_subject, try_dm, vod_embed_color
 from bot.views import ReportActionView
 
 
@@ -884,6 +884,7 @@ def _build_vod_question_embed(data: dict, prompt: str) -> discord.Embed:
     embed = discord.Embed(
         title="Selected Title",
         description=prompt,
+        color=vod_embed_color(),
     )
     embed.add_field(name="Title", value=label, inline=False)
     embed.add_field(name="Source", value=source, inline=True)

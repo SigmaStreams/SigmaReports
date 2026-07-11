@@ -136,6 +136,10 @@ async def try_dm(user: discord.abc.User, message: str) -> bool:
         return False
 
 
+def vod_embed_color() -> discord.Color:
+    return discord.Color.blurple()
+
+
 def build_staff_embed(
     report_id: int,
     report_type: str,
@@ -193,6 +197,7 @@ def build_staff_embed(
         embed.add_field(name="Issue", value=str(issue), inline=False)
 
     if rt == "VOD":
+        embed.color = vod_embed_color()
         vod_title = (payload or {}).get("title") or "Unknown"
         requested = _vod_requested_label(payload)
         language = _vod_language_label(payload)

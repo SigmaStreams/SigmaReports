@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import discord
 
 from bot.db import ReportDB
-from bot.utils import _vod_4k_label, _vod_device_label, _vod_language_label, _vod_remux_label, _vod_requested_label, _vod_type_label, build_staff_embed, report_subject, try_dm
+from bot.utils import _vod_4k_label, _vod_device_label, _vod_language_label, _vod_remux_label, _vod_requested_label, _vod_type_label, build_staff_embed, report_subject, try_dm, vod_embed_color
 
 
 CLOSED_STATUSES = {"Resolved", "Can't replicate", "Fixed", "Not Resolved"}
@@ -60,6 +60,7 @@ def _build_ticket_embed(report: dict, reporter: discord.abc.User, guild: discord
         embed.add_field(name="Issue", value=issue[:1024] if issue else "—", inline=False)
 
     elif rtype == "VOD":
+        embed.color = vod_embed_color()
         title = (payload.get("title") or "Unknown").strip()
         requested = _vod_requested_label(payload)
         language = _vod_language_label(payload)
