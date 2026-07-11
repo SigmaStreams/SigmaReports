@@ -749,6 +749,9 @@ def _vod_result_label(item: dict) -> str:
 
 VOD_TITLE_PAGE_SIZE = 25
 VOD_TITLE_MAX_RESULTS = 100
+VOD_FILTER_ALL = "all"
+VOD_FILTER_MOVIES = "movie"
+VOD_FILTER_TV = "tv"
 
 
 async def _search_vod_candidates(cfg, query: str) -> list[dict]:
@@ -799,6 +802,24 @@ def _vod_title_page_slice(candidates: list[dict], page: int) -> tuple[int, list[
     start = p * VOD_TITLE_PAGE_SIZE
     end = start + VOD_TITLE_PAGE_SIZE
     return p, candidates[start:end]
+
+
+def _vod_filter_candidates(candidates: list[dict], filter_mode: str) -> list[dict]:
+    mode = str(filter_mode or VOD_FILTER_ALL).strip().lower()
+    if mode == VOD_FILTER_MOVIES:
+        return [item for item in candidates if str(item.get("content_type") or "").strip().lower() == "movie"]
+    if mode == VOD_FILTER_TV:
+        return [item for item in candidates if str(item.get("content_type") or "").strip().lower() == "tv"]
+    return list(candidates)
+
+
+def _vod_filter_label(filter_mode: str) -> str:
+    mode = str(filter_mode or VOD_FILTER_ALL).strip().lower()
+    if mode == VOD_FILTER_MOVIES:
+        return "Movies"
+    if mode == VOD_FILTER_TV:
+        return "TV Shows"
+    return "All"
 
 
 def _build_vod_payload(state: dict) -> dict:
@@ -1198,20 +1219,20 @@ class _VODTitleResultSelect(discord.ui.Select):
     def __init__(self, candidates: list[dict], *, page: int):
         options = []
         page_idx, page_items = _vod_title_page_slice(candidates, page)
-        start_index = page_idx * VOD_TITLE_PAGE_SIZE
 
-        for idx, item in enumerate(page_items):
+        for item in page_items:
             title = str(item.get("title") or "Unknown").strip()
             year = str(item.get("year") or "").strip()
             source = "TMDB" if str(item.get("source_db") or "") == "tmdb" else "TVDB"
             kind = "Movie" if str(item.get("content_type") or "") == "movie" else "TV Show"
+            token = f"{str(item.get('source_db') or '').strip()}|{str(item.get('id') or '').strip()}"
 
             label = title[:100]
             desc_parts = [kind, source]
             if year:
                 desc_parts.insert(1, year)
             description = " • ".join(desc_parts)[:100]
-            options.append(discord.SelectOption(label=label, value=str(start_index + idx), description=description))
+            options.append(discord.SelectOption(label=label, value=token[:100], description=description))
 
         super().__init__(
             placeholder="Select the matching title",
@@ -1235,25 +1256,45 @@ class _VODTitleResultsView(_VODStepView):
         candidates: list[dict],
         *,
         page: int = 0,
+        filter_mode: str = VOD_FILTER_ALL,
     ):
         super().__init__(db, cfg, requester_id, state)
         self.candidates = list(candidates[:VOD_TITLE_MAX_RESULTS])
-        self.page = min(max(0, int(page)), _vod_title_page_count(self.candidates) - 1)
+        self.filter_mode = str(filter_mode or VOD_FILTER_ALL).strip().lower()
+        if self.filter_mode not in (VOD_FILTER_ALL, VOD_FILTER_MOVIES, VOD_FILTER_TV):
+            self.filter_mode = VOD_FILTER_ALL
 
-        self.add_item(_VODTitleResultSelect(self.candidates, page=self.page))
+        self.filtered_candidates = _vod_filter_candidates(self.candidates, self.filter_mode)
+        self.page = min(max(0, int(page)), _vod_title_page_count(self.filtered_candidates) - 1)
+
+        if self.filtered_candidates:
+            self.add_item(_VODTitleResultSelect(self.filtered_candidates, page=self.page))
         self.add_item(_VODOpenTitleModalButton(label="Search Again", custom_id="vodstep:title_again"))
 
-        total_pages = _vod_title_page_count(self.candidates)
-        self.prev_page.disabled = self.page <= 0
-        self.next_page.disabled = self.page >= (total_pages - 1)
+        total_pages = _vod_title_page_count(self.filtered_candidates)
+        self.prev_page.disabled = (not self.filtered_candidates) or self.page <= 0
+        self.next_page.disabled = (not self.filtered_candidates) or self.page >= (total_pages - 1)
+        self.filter_all.disabled = self.filter_mode == VOD_FILTER_ALL
+        self.filter_movies.disabled = self.filter_mode == VOD_FILTER_MOVIES
+        self.filter_tv.disabled = self.filter_mode == VOD_FILTER_TV
 
     def _content_text(self) -> str:
-        total = len(self.candidates)
-        total_pages = _vod_title_page_count(self.candidates)
+        filtered_total = len(self.filtered_candidates)
+        all_total = len(self.candidates)
+        active_filter = _vod_filter_label(self.filter_mode)
+
+        if not self.filtered_candidates:
+            return (
+                "Select the correct title:\n"
+                f"Filter: **{active_filter}** • **0** of **{all_total}** results\n"
+                "No results match this filter. Choose another filter or Search Again."
+            )
+
+        total_pages = _vod_title_page_count(self.filtered_candidates)
         return (
             "Select the correct title:\n"
-            f"Page **{self.page + 1}** of **{total_pages}** • **{total}** results\n"
-            "Tip: Use Previous Page/Next Page to browse, or Search Again to refine results."
+            f"Filter: **{active_filter}** • Page **{self.page + 1}** of **{total_pages}** • **{filtered_total}** of **{all_total}** results\n"
+            "Tip: Use Previous Page/Next Page to browse, filters to narrow type, or Search Again to refine results."
         )
 
     async def open_modal(self, interaction: discord.Interaction):
@@ -1278,13 +1319,14 @@ class _VODTitleResultsView(_VODStepView):
             self.state,
             self.candidates,
             page=new_page,
+            filter_mode=self.filter_mode,
         )
         await interaction.response.edit_message(content=view._content_text(), view=view)
 
     @discord.ui.button(label="Next Page", style=discord.ButtonStyle.secondary)
     async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
         del button
-        max_page = _vod_title_page_count(self.candidates) - 1
+        max_page = _vod_title_page_count(self.filtered_candidates) - 1
         new_page = min(max_page, self.page + 1)
         view = _VODTitleResultsView(
             self.db,
@@ -1293,13 +1335,51 @@ class _VODTitleResultsView(_VODStepView):
             self.state,
             self.candidates,
             page=new_page,
+            filter_mode=self.filter_mode,
         )
         await interaction.response.edit_message(content=view._content_text(), view=view)
 
+    async def _switch_filter(self, interaction: discord.Interaction, filter_mode: str):
+        view = _VODTitleResultsView(
+            self.db,
+            self.cfg,
+            self.requester_id,
+            self.state,
+            self.candidates,
+            page=0,
+            filter_mode=filter_mode,
+        )
+        await interaction.response.edit_message(content=view._content_text(), view=view)
+
+    @discord.ui.button(label="All", style=discord.ButtonStyle.primary)
+    async def filter_all(self, interaction: discord.Interaction, button: discord.ui.Button):
+        del button
+        await self._switch_filter(interaction, VOD_FILTER_ALL)
+
+    @discord.ui.button(label="Movies", style=discord.ButtonStyle.primary)
+    async def filter_movies(self, interaction: discord.Interaction, button: discord.ui.Button):
+        del button
+        await self._switch_filter(interaction, VOD_FILTER_MOVIES)
+
+    @discord.ui.button(label="TV Shows", style=discord.ButtonStyle.primary)
+    async def filter_tv(self, interaction: discord.Interaction, button: discord.ui.Button):
+        del button
+        await self._switch_filter(interaction, VOD_FILTER_TV)
+
     async def handle_selection(self, interaction: discord.Interaction, value: str):
         try:
-            idx = int(value)
-            item = self.candidates[idx]
+            source_db, source_id = str(value or "").split("|", 1)
+            item = next(
+                (
+                    cand
+                    for cand in self.candidates
+                    if str(cand.get("source_db") or "").strip() == source_db
+                    and str(cand.get("id") or "").strip() == source_id
+                ),
+                None,
+            )
+            if item is None:
+                raise ValueError("missing")
         except Exception:
             return await interaction.response.send_message("❌ Invalid selection.", ephemeral=True)
 
