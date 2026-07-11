@@ -1123,13 +1123,9 @@ class ReportPanelView(discord.ui.View):
             return
 
         # Lazy import avoids circular imports
-        from bot.modals import VODQuestionnaireView
+        from bot.modals import start_vod_title_flow
 
-        await interaction.response.send_message(
-            "Was this title requested through the Requests Bot?",
-            view=VODQuestionnaireView(self.db, self.cfg, interaction.user.id),
-            ephemeral=True,
-        )
+        await start_vod_title_flow(interaction, self.db, self.cfg)
 
 
 class ReportPanelCog(commands.Cog):

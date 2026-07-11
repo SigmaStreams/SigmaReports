@@ -3,7 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 from datetime import datetime, timezone
 
-from bot.modals import TVReportModal, VODQuestionnaireView
+from bot.modals import TVReportModal, start_vod_title_flow
 from bot.views import ReportActionView
 from bot.utils import build_staff_embed, report_subject
 
@@ -220,11 +220,7 @@ class Reports(commands.Cog):
         if not await self._block_gate(interaction):
             return
 
-        await interaction.response.send_message(
-            "Was this title requested through the Requests Bot?",
-            view=VODQuestionnaireView(self.db, self.cfg, interaction.user.id),
-            ephemeral=True,
-        )
+        await start_vod_title_flow(interaction, self.db, self.cfg)
 
     # ----------------------------
     # Staff: edit report
