@@ -1,6 +1,6 @@
 import json
 import urllib.request
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 
 def _tvdb_request(url: str, *, method: str = "GET", payload: dict | None = None, token: str | None = None, timeout: int = 15) -> dict:
@@ -83,3 +83,41 @@ def search_tvdb_series(api_key: str, query: str, limit: int = 12) -> list[dict]:
             break
 
     return out
+
+
+def _extract_tvdb_slug(url: str) -> str:
+    parsed = urlparse((url or "").strip())
+    host = (parsed.netloc or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    if host != "thetvdb.com":
+        return ""
+
+    parts = [part for part in (parsed.path or "").split("/") if part]
+    if len(parts) < 2 or parts[0] != "series":
+        return ""
+    return parts[1].strip()
+
+
+def resolve_tvdb_series_link(api_key: str, url: str) -> dict | None:
+    """
+    Resolve a TVDB series URL into a title record used by the VOD workflow.
+    """
+    slug = _extract_tvdb_slug(url)
+    if not api_key or not slug:
+        return None
+
+    candidates = search_tvdb_series(api_key, slug.replace("-", " "), limit=25)
+    slug_lower = slug.lower()
+
+    for item in candidates:
+        ref = str(item.get("reference_link") or "").strip().lower().rstrip("/")
+        if ref.endswith(f"/series/{slug_lower}"):
+            return item
+
+    for item in candidates:
+        ref = str(item.get("reference_link") or "").strip().lower().rstrip("/")
+        if f"/series/{slug_lower}" in ref:
+            return item
+
+    return candidates[0] if candidates else None

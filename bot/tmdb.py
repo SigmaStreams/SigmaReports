@@ -1,6 +1,6 @@
 import json
 import urllib.request
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 from typing import List
 
 
@@ -84,3 +84,45 @@ def search_tmdb_movies(bearer_token: str, query: str, limit: int = 12) -> list[d
             break
 
     return out
+
+
+def _extract_tmdb_movie_id(url: str) -> int | None:
+    parsed = urlparse((url or "").strip())
+    host = (parsed.netloc or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    if host != "themoviedb.org":
+        return None
+
+    parts = [part for part in (parsed.path or "").split("/") if part]
+    if len(parts) < 2 or parts[0] != "movie":
+        return None
+
+    raw_id = parts[1].split("-", 1)[0].strip()
+    return int(raw_id) if raw_id.isdigit() else None
+
+
+def resolve_tmdb_movie_link(bearer_token: str, url: str) -> dict | None:
+    """
+    Resolve a TMDB movie URL into a title record used by the VOD workflow.
+    """
+    movie_id = _extract_tmdb_movie_id(url)
+    if not bearer_token or movie_id is None:
+        return None
+
+    data = _tmdb_get(f"https://api.themoviedb.org/3/movie/{movie_id}", bearer_token)
+    title = str(data.get("title") or "").strip()
+    if not title:
+        return None
+
+    release_date = str(data.get("release_date") or "").strip()
+    year = release_date[:4] if len(release_date) >= 4 and release_date[:4].isdigit() else ""
+
+    return {
+        "id": int(movie_id),
+        "title": title,
+        "year": year,
+        "content_type": "movie",
+        "source_db": "tmdb",
+        "reference_link": f"https://www.themoviedb.org/movie/{int(movie_id)}",
+    }

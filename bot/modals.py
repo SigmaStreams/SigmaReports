@@ -6,8 +6,8 @@ from urllib.parse import urlparse
 import discord
 
 from bot.db import ReportDB
-from bot.tmdb import search_tmdb_movies
-from bot.tvdb import search_tvdb_series
+from bot.tmdb import resolve_tmdb_movie_link, search_tmdb_movies
+from bot.tvdb import resolve_tvdb_series_link, search_tvdb_series
 from bot.utils import build_staff_embed, report_subject, try_dm
 from bot.views import ReportActionView
 
@@ -822,6 +822,37 @@ def _vod_filter_label(filter_mode: str) -> str:
     return "All"
 
 
+def _is_supported_vod_reference_link(url: str) -> bool:
+    return _is_tmdb_movie_link(url) or _is_tvdb_series_link(url)
+
+
+def _apply_vod_selected_item(state: dict, item: dict) -> dict:
+    state["title"] = str(item.get("title") or "").strip()
+    state["title_year"] = str(item.get("year") or "").strip()
+    state["content_type"] = _normalize_vod_content_type(str(item.get("content_type") or ""))
+    state["source_db"] = str(item.get("source_db") or "").strip()
+    state["source_id"] = str(item.get("id") or "").strip()
+    state["reference_link"] = str(item.get("reference_link") or "").strip()
+    return state
+
+
+async def _resolve_vod_reference_link(cfg, url: str) -> dict | None:
+    link = str(url or "").strip()
+    if _is_tmdb_movie_link(link):
+        token = str(getattr(cfg, "tmdb_bearer_token", "") or "").strip()
+        if not token:
+            return None
+        return await asyncio.to_thread(resolve_tmdb_movie_link, token, link)
+
+    if _is_tvdb_series_link(link):
+        api_key = str(getattr(cfg, "tvdb_key", "") or "").strip()
+        if not api_key:
+            return None
+        return await asyncio.to_thread(resolve_tvdb_series_link, api_key, link)
+
+    return None
+
+
 def _build_vod_payload(state: dict) -> dict:
     return {
         "requested_via_bot": state["requested_via_bot"],
@@ -1186,11 +1217,85 @@ class _VODOpenTitleModalButton(discord.ui.Button):
         await self.view.open_modal(interaction)
 
 
+class _VODOpenManualEntryButton(discord.ui.Button):
+    def __init__(self, *, label: str = "Manual Entry", custom_id: str = "vodstep:manual_entry"):
+        super().__init__(label=label, style=discord.ButtonStyle.secondary, emoji="🔗", custom_id=custom_id)
+
+    async def callback(self, interaction: discord.Interaction):
+        await self.view.open_manual_entry(interaction)
+
+
+class _VODManualEntryModal(discord.ui.Modal, title="Manual Entry"):
+    reference_link = discord.ui.TextInput(
+        label="TMDB or TVDB link",
+        placeholder="Example: https://www.themoviedb.org/movie/14161-2012 or https://www.thetvdb.com/series/family-guy",
+        max_length=300,
+    )
+
+    def __init__(self, db: ReportDB, cfg, requester_id: int, state: dict, launcher_interaction: discord.Interaction):
+        super().__init__()
+        self.db = db
+        self.cfg = cfg
+        self.requester_id = int(requester_id)
+        self.state = dict(state)
+        self.launcher_interaction = launcher_interaction
+
+    async def on_submit(self, interaction: discord.Interaction):
+        link = str(self.reference_link).strip()
+        if not _is_supported_vod_reference_link(link):
+            return await interaction.response.send_message(
+                (
+                    "❌ Enter a valid **TMDB movie** link or **TVDB series** link.\n\n"
+                    "Examples:\n"
+                    "• <https://www.themoviedb.org/movie/14161-2012>\n"
+                    "• <https://www.thetvdb.com/series/family-guy>"
+                ),
+                ephemeral=True,
+            )
+
+        await interaction.response.defer(ephemeral=True)
+        item = await _resolve_vod_reference_link(self.cfg, link)
+        if not item:
+            return await interaction.followup.send(
+                "❌ I couldn't resolve that link. Double-check the TMDB/TVDB URL and try again.",
+                ephemeral=True,
+            )
+
+        self.state["title_query"] = self.state.get("title_query") or str(item.get("title") or "").strip()
+        updated_state = _apply_vod_selected_item(self.state, item)
+        label = _vod_result_label(item)
+        source = "TMDB" if updated_state["source_db"] == "tmdb" else "TVDB"
+
+        try:
+            await self.launcher_interaction.edit_original_response(
+                content=(
+                    f"Selected: **{label}**\n"
+                    f"Source: **{source}**\n"
+                    "Was this title requested through the Requests Bot?"
+                ),
+                view=_VODRequestedQuestionView(self.db, self.cfg, self.requester_id, updated_state),
+            )
+            return
+        except Exception:
+            pass
+
+        await interaction.followup.send(
+            content=(
+                f"Selected: **{label}**\n"
+                f"Source: **{source}**\n"
+                "Was this title requested through the Requests Bot?"
+            ),
+            view=_VODRequestedQuestionView(self.db, self.cfg, self.requester_id, updated_state),
+            ephemeral=True,
+        )
+
+
 class _VODTitleRetryView(_VODStepView):
     def __init__(self, db: ReportDB, cfg, requester_id: int, state: dict):
         super().__init__(db, cfg, requester_id, state)
         self.modal_open = False
         self.add_item(_VODOpenTitleModalButton(label="Search Title", custom_id="vodstep:title_retry"))
+        self.add_item(_VODOpenManualEntryButton(custom_id="vodstep:manual_retry"))
 
     async def open_modal(self, interaction: discord.Interaction):
         if self.modal_open:
@@ -1213,6 +1318,17 @@ class _VODTitleRetryView(_VODStepView):
         except Exception:
             self.modal_open = False
             raise
+
+    async def open_manual_entry(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(
+            _VODManualEntryModal(
+                self.db,
+                self.cfg,
+                self.requester_id,
+                self.state,
+                interaction,
+            )
+        )
 
 
 class _VODTitleResultSelect(discord.ui.Select):
@@ -1270,6 +1386,7 @@ class _VODTitleResultsView(_VODStepView):
         if self.filtered_candidates:
             self.add_item(_VODTitleResultSelect(self.filtered_candidates, page=self.page))
         self.add_item(_VODOpenTitleModalButton(label="Search Again", custom_id="vodstep:title_again"))
+        self.add_item(_VODOpenManualEntryButton(custom_id="vodstep:manual_results"))
 
         total_pages = _vod_title_page_count(self.filtered_candidates)
         self.prev_page.disabled = (not self.filtered_candidates) or self.page <= 0
@@ -1300,6 +1417,17 @@ class _VODTitleResultsView(_VODStepView):
     async def open_modal(self, interaction: discord.Interaction):
         await interaction.response.send_modal(
             _VODTitleSearchModal(
+                self.db,
+                self.cfg,
+                self.requester_id,
+                self.state,
+                interaction,
+            )
+        )
+
+    async def open_manual_entry(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(
+            _VODManualEntryModal(
                 self.db,
                 self.cfg,
                 self.requester_id,
@@ -1387,12 +1515,7 @@ class _VODTitleResultsView(_VODStepView):
         if not title:
             return await interaction.response.send_message("❌ Invalid title selection.", ephemeral=True)
 
-        self.state["title"] = title
-        self.state["title_year"] = str(item.get("year") or "").strip()
-        self.state["content_type"] = _normalize_vod_content_type(str(item.get("content_type") or ""))
-        self.state["source_db"] = str(item.get("source_db") or "").strip()
-        self.state["source_id"] = str(item.get("id") or "").strip()
-        self.state["reference_link"] = str(item.get("reference_link") or "").strip()
+        _apply_vod_selected_item(self.state, item)
 
         label = _vod_result_label(item)
         source = "TMDB" if self.state["source_db"] == "tmdb" else "TVDB"
