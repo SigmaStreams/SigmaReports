@@ -1253,7 +1253,7 @@ class _VODTitleResultsView(_VODStepView):
         return (
             "Select the correct title:\n"
             f"Page **{self.page + 1}** of **{total_pages}** • **{total}** results\n"
-            "Tip: the dropdown supports type-ahead search on the visible page."
+            "Tip: Use Previous Page/Next Page to browse, or Search Again to refine results."
         )
 
     async def open_modal(self, interaction: discord.Interaction):
