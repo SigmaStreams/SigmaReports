@@ -112,6 +112,10 @@ def _vod_remux_label(payload: dict) -> str:
     return value or "Not provided"
 
 
+def _vod_poster_url(payload: dict) -> str:
+    return str((payload or {}).get("poster_url") or "").strip()
+
+
 def _iso_to_discord_ts(iso: Optional[str]) -> Optional[str]:
     if not iso:
         return None
@@ -213,6 +217,10 @@ def build_staff_embed(
         embed.add_field(name="Movie or TV Show", value=str(content_type), inline=True)
 
         embed.add_field(name="Issue", value=str(issue), inline=False)
+
+        poster_url = _vod_poster_url(payload)
+        if poster_url:
+            embed.set_thumbnail(url=poster_url)
 
     # Ticket link (hide once closed)
     if ticket_channel_id and status_low not in ("resolved", "not resolved"):

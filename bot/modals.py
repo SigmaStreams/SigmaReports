@@ -731,6 +731,7 @@ def _new_vod_state() -> dict:
         "content_type": "",
         "source_db": "",
         "source_id": "",
+        "poster_url": "",
         "title_year": "",
         "issue": "",
     }
@@ -833,6 +834,7 @@ def _apply_vod_selected_item(state: dict, item: dict) -> dict:
     state["source_db"] = str(item.get("source_db") or "").strip()
     state["source_id"] = str(item.get("id") or "").strip()
     state["reference_link"] = str(item.get("reference_link") or "").strip()
+    state["poster_url"] = str(item.get("poster_url") or "").strip()
     return state
 
 
@@ -867,9 +869,33 @@ def _build_vod_payload(state: dict) -> dict:
         "content_type": state["content_type"],
         "source_db": state["source_db"],
         "source_id": state["source_id"],
+        "poster_url": state["poster_url"],
         "quality": "4K" if state["is_4k"] == "Yes" else "Non-4K",
         "issue": state["issue"],
     }
+
+
+def _build_vod_selected_embed(item: dict) -> discord.Embed:
+    label = _vod_result_label(item)
+    source = "TMDB" if str(item.get("source_db") or "").strip() == "tmdb" else "TVDB"
+    content_type = "Movie" if str(item.get("content_type") or "").strip() == "movie" else "TV Show"
+    year = str(item.get("year") or "").strip()
+
+    embed = discord.Embed(
+        title="Selected Title",
+        description="Was this title requested through the Requests Bot?",
+    )
+    embed.add_field(name="Title", value=label, inline=False)
+    embed.add_field(name="Source", value=source, inline=True)
+    embed.add_field(name="Type", value=content_type, inline=True)
+    if year:
+        embed.add_field(name="Year", value=year, inline=True)
+
+    poster_url = str(item.get("poster_url") or "").strip()
+    if poster_url:
+        embed.set_thumbnail(url=poster_url)
+
+    return embed
 
 
 class _VODStepView(discord.ui.View):
@@ -1263,16 +1289,12 @@ class _VODManualEntryModal(discord.ui.Modal, title="Manual Entry"):
 
         self.state["title_query"] = self.state.get("title_query") or str(item.get("title") or "").strip()
         updated_state = _apply_vod_selected_item(self.state, item)
-        label = _vod_result_label(item)
-        source = "TMDB" if updated_state["source_db"] == "tmdb" else "TVDB"
+        embed = _build_vod_selected_embed(item)
 
         try:
             await self.launcher_interaction.edit_original_response(
-                content=(
-                    f"Selected: **{label}**\n"
-                    f"Source: **{source}**\n"
-                    "Was this title requested through the Requests Bot?"
-                ),
+                content=None,
+                embed=embed,
                 view=_VODRequestedQuestionView(self.db, self.cfg, self.requester_id, updated_state),
             )
             return
@@ -1280,11 +1302,7 @@ class _VODManualEntryModal(discord.ui.Modal, title="Manual Entry"):
             pass
 
         await interaction.followup.send(
-            content=(
-                f"Selected: **{label}**\n"
-                f"Source: **{source}**\n"
-                "Was this title requested through the Requests Bot?"
-            ),
+            embed=embed,
             view=_VODRequestedQuestionView(self.db, self.cfg, self.requester_id, updated_state),
             ephemeral=True,
         )
@@ -1516,15 +1534,10 @@ class _VODTitleResultsView(_VODStepView):
             return await interaction.response.send_message("❌ Invalid title selection.", ephemeral=True)
 
         _apply_vod_selected_item(self.state, item)
-
-        label = _vod_result_label(item)
-        source = "TMDB" if self.state["source_db"] == "tmdb" else "TVDB"
+        embed = _build_vod_selected_embed(item)
         await interaction.response.edit_message(
-            content=(
-                f"Selected: **{label}**\n"
-                f"Source: **{source}**\n"
-                "Was this title requested through the Requests Bot?"
-            ),
+            content=None,
+            embed=embed,
             view=_VODRequestedQuestionView(self.db, self.cfg, self.requester_id, self.state),
         )
 

@@ -4,6 +4,13 @@ from urllib.parse import quote, urlparse
 from typing import List
 
 
+def _tmdb_poster_url(poster_path: str | None) -> str:
+    path = str(poster_path or "").strip()
+    if not path:
+        return ""
+    return f"https://image.tmdb.org/t/p/w342{path}"
+
+
 def _tmdb_get(url: str, bearer_token: str, timeout: int = 15) -> dict:
     req = urllib.request.Request(
         url,
@@ -78,6 +85,7 @@ def search_tmdb_movies(bearer_token: str, query: str, limit: int = 12) -> list[d
                 "content_type": "movie",
                 "source_db": "tmdb",
                 "reference_link": f"https://www.themoviedb.org/movie/{int(mid)}",
+                "poster_url": _tmdb_poster_url(item.get("poster_path")),
             }
         )
         if len(out) >= max(1, int(limit)):
@@ -125,4 +133,5 @@ def resolve_tmdb_movie_link(bearer_token: str, url: str) -> dict | None:
         "content_type": "movie",
         "source_db": "tmdb",
         "reference_link": f"https://www.themoviedb.org/movie/{int(movie_id)}",
+        "poster_url": _tmdb_poster_url(data.get("poster_path")),
     }

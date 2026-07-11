@@ -3,6 +3,14 @@ import urllib.request
 from urllib.parse import quote, urlparse
 
 
+def _tvdb_poster_url(item: dict) -> str:
+    for key in ("image_url", "image", "thumbnail"):
+        value = str(item.get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
 def _tvdb_request(url: str, *, method: str = "GET", payload: dict | None = None, token: str | None = None, timeout: int = 15) -> dict:
     data = None
     headers = {"Accept": "application/json"}
@@ -77,6 +85,7 @@ def search_tvdb_series(api_key: str, query: str, limit: int = 12) -> list[dict]:
                 "content_type": "tv",
                 "source_db": "tvdb",
                 "reference_link": ref,
+                "poster_url": _tvdb_poster_url(item),
             }
         )
         if len(out) >= max(1, int(limit)):

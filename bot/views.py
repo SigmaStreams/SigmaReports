@@ -87,6 +87,10 @@ def _build_ticket_embed(report: dict, reporter: discord.abc.User, guild: discord
 
         embed.add_field(name="Issue", value=issue[:1024] if issue else "—", inline=False)
 
+        poster_url = str(payload.get("poster_url") or "").strip()
+        if poster_url:
+            embed.set_thumbnail(url=poster_url)
+
     return embed
 
 
