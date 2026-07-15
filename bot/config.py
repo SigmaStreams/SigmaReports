@@ -38,11 +38,11 @@ class Config:
 
     public_updates: bool
     double_confirmation: bool
-    remux: bool
     db_path: str
     tmdb_bearer_token: str
     tvdb_key: str
     staff_role_id: int
+    ss_vod_remux_role_id: int
     modlogs_channel_id: int
     responses_channel_id: int
     transcripts_channel_id: int
@@ -82,7 +82,6 @@ def load_config() -> Config:
 
     public_updates = _get_bool("PUBLIC_UPDATES", True)
     double_confirmation = _get_bool("DOUBLE_CONFIRMATION", False)
-    remux = _get_bool("REMUX", False)
     db_path = os.getenv("DB_PATH", "./data/reports.sqlite3").strip()
     tmdb_bearer_token = os.getenv("TMDB_BEARER_TOKEN", "").strip()
     tvdb_key = os.getenv("TVDB_KEY", "").strip()
@@ -90,6 +89,10 @@ def load_config() -> Config:
     staff_role_id = int(os.getenv("STAFF_ROLE_ID", "0"))
     if staff_role_id <= 0:
         raise RuntimeError("Missing STAFF_ROLE_ID in .env")
+
+    ss_vod_remux_role_id = int(os.getenv("SS_VOD_REMUX_ROLE_ID", "0"))
+    if ss_vod_remux_role_id <= 0:
+        raise RuntimeError("Missing SS_VOD_REMUX_ROLE_ID in .env")
 
     modlogs_channel_id = int(os.getenv("MODLOGS_CHANNEL_ID", "0"))
     transcripts_channel_id = int(os.getenv("TRANSCRIPTS_CHANNEL_ID", "0"))
@@ -109,11 +112,11 @@ def load_config() -> Config:
         staff_ping_user_ids=staff_ping_user_ids,
         public_updates=public_updates,
         double_confirmation=double_confirmation,
-        remux=remux,
         db_path=db_path,
         tmdb_bearer_token=tmdb_bearer_token,
         tvdb_key=tvdb_key,
         staff_role_id=staff_role_id,
+        ss_vod_remux_role_id=ss_vod_remux_role_id,
         modlogs_channel_id=modlogs_channel_id,
         transcripts_channel_id=transcripts_channel_id,
         responses_channel_id=responses_channel_id,

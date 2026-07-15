@@ -145,6 +145,7 @@ Required settings:
 - `DISCORD_TOKEN`
 - `STAFF_CHANNEL_ID`
 - `STAFF_ROLE_ID`
+- `SS_VOD_REMUX_ROLE_ID`
 - `REPORTS_CHANNEL_IDS` or legacy `REPORTS_CHANNEL_ID`
 
 Required only when `PUBLIC_UPDATES=true`:
@@ -163,12 +164,11 @@ Optional settings:
 - `VOD_STAFF_PING_USER_IDS`
 - `PUBLIC_UPDATES`
 - `DOUBLE_CONFIRMATION`
-- `REMUX`
 
 Notes:
 - Split TV and VOD ping lists fall back to `STAFF_PING_USER_IDS` if the split lists are empty.
 - `DOUBLE_CONFIRMATION=true` makes the Live TV review screen require a second press of `Submit` before the report is actually sent.
-- `REMUX=true` inserts an extra VOD question after the 4K prompt: `Is this title a remux?`
+- Members with the role configured by `SS_VOD_REMUX_ROLE_ID` are asked `Is this title a remux?` after the 4K prompt; other members proceed directly to the VOD details form.
 - `TICKETS_CATEGORY_ID` controls which category new ticket channels are created under. If it is empty, tickets are created without a category.
 - Runtime data is stored under `./data` by default.
 - Do not commit `.env`.

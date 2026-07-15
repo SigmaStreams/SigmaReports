@@ -1105,7 +1105,9 @@ class _VOD4KQuestionView(_VODStepView):
 
     async def handle_selection(self, interaction: discord.Interaction, value: str):
         self.state["is_4k"] = _normalize_vod_4k(value)
-        if getattr(self.cfg, "remux", False):
+        remux_role_id = int(getattr(self.cfg, "ss_vod_remux_role_id", 0) or 0)
+        member_roles = getattr(interaction.user, "roles", ())
+        if any(role.id == remux_role_id for role in member_roles):
             return await interaction.response.edit_message(
                 content=None,
                 embed=_build_vod_question_embed(self.state, "Is this title a remux?"),
