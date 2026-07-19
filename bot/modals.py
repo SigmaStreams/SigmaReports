@@ -899,6 +899,51 @@ def _build_vod_question_embed(data: dict, prompt: str) -> discord.Embed:
     return embed
 
 
+def _build_vod_review_embed(state: dict) -> discord.Embed:
+    title = str(state.get("title") or "Unknown").strip()
+    year = str(state.get("title_year") or "").strip()
+    title_label = f"{title} ({year})" if year else title
+    content_type = "Movie" if str(state.get("content_type") or "").strip() == "movie" else "TV Show"
+    source = "TMDB" if str(state.get("source_db") or "").strip() == "tmdb" else "TVDB"
+    issue = str(state.get("issue") or "—").strip()
+
+    embed = discord.Embed(
+        title="Review VOD Report",
+        description=(
+            "Confirm the information below before submitting. "
+            "Use **Change an answer** to correct anything."
+        ),
+        color=vod_embed_color(),
+    )
+    embed.add_field(name="Title", value=title_label or "Unknown", inline=False)
+    embed.add_field(name="Type / Source", value=f"{content_type} • {source}", inline=True)
+    embed.add_field(
+        name="Requested Through Bot",
+        value=str(state.get("requested_via_bot") or "—"),
+        inline=True,
+    )
+    embed.add_field(name="Language", value=str(state.get("language") or "—"), inline=True)
+    embed.add_field(name="4K", value=str(state.get("is_4k") or "—"), inline=True)
+    if str(state.get("is_remux") or "").strip():
+        embed.add_field(name="Remux", value=str(state["is_remux"]), inline=True)
+    embed.add_field(name="Device", value=str(state.get("device") or "—"), inline=False)
+    embed.add_field(name="Issue", value=issue[:1024] or "—", inline=False)
+
+    reference_link = str(state.get("reference_link") or "").strip()
+    if reference_link:
+        embed.add_field(name="Reference", value=reference_link, inline=False)
+
+    poster_url = str(state.get("poster_url") or "").strip()
+    if poster_url:
+        embed.set_thumbnail(url=poster_url)
+
+    return embed
+
+
+def _vod_editing(state: dict) -> bool:
+    return bool(str(state.pop("_edit_vod_field", "") or "").strip())
+
+
 class _VODStepView(discord.ui.View):
     def __init__(self, db: ReportDB, cfg, requester_id: int, state: dict):
         super().__init__(timeout=180)
@@ -951,13 +996,11 @@ class _VODDetailsModal(discord.ui.Modal, title="VOD Report Details"):
     async def on_submit(self, interaction: discord.Interaction):
         self.state["device"] = str(self.device).strip()
         self.state["issue"] = str(self.issue).strip()
-
-        payload = _build_vod_payload(self.state)
-        report_id = await _submit_vod_report(interaction, self.db, self.cfg, payload)
+        self.state.pop("_edit_vod_field", None)
         await interaction.response.edit_message(
-            content=f"✅ Submitted VOD report **#{report_id}** for **{payload['title']}**.",
-            embed=None,
-            view=None,
+            content=None,
+            embed=_build_vod_review_embed(self.state),
+            view=_VODReviewView(self.db, self.cfg, self.requester_id, self.state),
         )
 
 
@@ -1043,6 +1086,119 @@ class _VODSelect(discord.ui.Select):
         await self.view.handle_selection(interaction, self.values[0])
 
 
+class _VODReviewEditSelect(discord.ui.Select):
+    def __init__(self, *, include_remux: bool):
+        options = [
+            discord.SelectOption(label="Title", value="title"),
+            discord.SelectOption(label="Requested Through Bot", value="requested"),
+            discord.SelectOption(label="Language", value="language"),
+            discord.SelectOption(label="4K", value="4k"),
+        ]
+        if include_remux:
+            options.append(discord.SelectOption(label="Remux", value="remux"))
+        options.append(discord.SelectOption(label="Device or Issue", value="details"))
+
+        super().__init__(
+            placeholder="Change an answer",
+            min_values=1,
+            max_values=1,
+            options=options,
+            custom_id="vodstep:review_edit",
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        await self.view.handle_edit(interaction, self.values[0])
+
+
+class _VODReviewView(_VODStepView):
+    def __init__(self, db: ReportDB, cfg, requester_id: int, state: dict):
+        super().__init__(db, cfg, requester_id, state)
+        self.add_item(
+            _VODReviewEditSelect(
+                include_remux=bool(str(self.state.get("is_remux") or "").strip()),
+            )
+        )
+
+    async def handle_edit(self, interaction: discord.Interaction, field: str):
+        self.state["_edit_vod_field"] = field
+
+        if field == "title":
+            await interaction.response.edit_message(
+                content="Search for or manually enter the correct title.",
+                embed=None,
+                view=_VODTitleRetryView(self.db, self.cfg, self.requester_id, self.state),
+            )
+            return
+
+        if field == "requested":
+            prompt = "Was this title requested through the Requests Bot?"
+            view = _VODRequestedQuestionView(self.db, self.cfg, self.requester_id, self.state)
+        elif field == "language":
+            prompt = "English or Foreign?"
+            view = _VODLanguageQuestionView(self.db, self.cfg, self.requester_id, self.state)
+        elif field == "4k":
+            prompt = "Is this a 4K title?"
+            view = _VOD4KQuestionView(self.db, self.cfg, self.requester_id, self.state)
+        elif field == "remux":
+            prompt = "Is this title a remux?"
+            view = _VODRemuxQuestionView(self.db, self.cfg, self.requester_id, self.state)
+        elif field == "details":
+            await interaction.response.send_modal(
+                _VODDetailsModal(
+                    self.db,
+                    self.cfg,
+                    self.requester_id,
+                    self.state,
+                    interaction,
+                )
+            )
+            return
+        else:
+            await interaction.response.send_message("❌ Invalid edit selection.", ephemeral=True)
+            return
+
+        await interaction.response.edit_message(
+            content=None,
+            embed=_build_vod_question_embed(self.state, prompt),
+            view=view,
+        )
+
+    @discord.ui.button(label="Submit", style=discord.ButtonStyle.success, custom_id="vodstep:review_submit")
+    async def submit_report(self, interaction: discord.Interaction, button: discord.ui.Button):
+        del button
+        staff_channel = interaction.guild.get_channel(self.cfg.staff_channel_id)
+        if not isinstance(staff_channel, discord.TextChannel):
+            await interaction.response.send_message("❌ Staff channel not found.", ephemeral=True)
+            return
+
+        payload = _build_vod_payload(self.state)
+        await interaction.response.edit_message(content="Submitting VOD report…", embed=None, view=None)
+        try:
+            report_id = await _submit_vod_report(interaction, self.db, self.cfg, payload)
+        except Exception:
+            await interaction.edit_original_response(
+                content="❌ The report could not be submitted. Review it and try again.",
+                embed=_build_vod_review_embed(self.state),
+                view=_VODReviewView(self.db, self.cfg, self.requester_id, self.state),
+            )
+            return
+
+        await interaction.edit_original_response(
+            content=f"✅ Submitted VOD report **#{report_id}** for **{payload['title']}**.",
+            embed=None,
+            view=None,
+        )
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.danger, custom_id="vodstep:review_cancel")
+    async def cancel_report(self, interaction: discord.Interaction, button: discord.ui.Button):
+        del button
+        await interaction.response.edit_message(
+            content="Cancelled VOD report. Nothing was submitted.",
+            embed=None,
+            view=None,
+        )
+
+
 class _VODRequestedQuestionView(_VODStepView):
     def __init__(self, db: ReportDB, cfg, requester_id: int, state: dict):
         super().__init__(db, cfg, requester_id, state)
@@ -1060,6 +1216,14 @@ class _VODRequestedQuestionView(_VODStepView):
 
     async def handle_selection(self, interaction: discord.Interaction, value: str):
         self.state["requested_via_bot"] = value
+        if _vod_editing(self.state):
+            await interaction.response.edit_message(
+                content=None,
+                embed=_build_vod_review_embed(self.state),
+                view=_VODReviewView(self.db, self.cfg, self.requester_id, self.state),
+            )
+            return
+
         await interaction.response.edit_message(
             content=None,
             embed=_build_vod_question_embed(self.state, "English or Foreign?"),
@@ -1083,6 +1247,14 @@ class _VODLanguageQuestionView(_VODStepView):
 
     async def handle_selection(self, interaction: discord.Interaction, value: str):
         self.state["language"] = _normalize_vod_language(value)
+        if _vod_editing(self.state):
+            await interaction.response.edit_message(
+                content=None,
+                embed=_build_vod_review_embed(self.state),
+                view=_VODReviewView(self.db, self.cfg, self.requester_id, self.state),
+            )
+            return
+
         await interaction.response.edit_message(
             content=None,
             embed=_build_vod_question_embed(self.state, "Is this a 4K title?"),
@@ -1106,6 +1278,14 @@ class _VOD4KQuestionView(_VODStepView):
 
     async def handle_selection(self, interaction: discord.Interaction, value: str):
         self.state["is_4k"] = _normalize_vod_4k(value)
+        if _vod_editing(self.state):
+            await interaction.response.edit_message(
+                content=None,
+                embed=_build_vod_review_embed(self.state),
+                view=_VODReviewView(self.db, self.cfg, self.requester_id, self.state),
+            )
+            return
+
         remux_role_id = int(getattr(self.cfg, "ss_vod_remux_role_id", 0) or 0)
         member_roles = getattr(interaction.user, "roles", ())
         if any(role.id == remux_role_id for role in member_roles):
@@ -1143,6 +1323,14 @@ class _VODRemuxQuestionView(_VODStepView):
 
     async def handle_selection(self, interaction: discord.Interaction, value: str):
         self.state["is_remux"] = value
+        if _vod_editing(self.state):
+            await interaction.response.edit_message(
+                content=None,
+                embed=_build_vod_review_embed(self.state),
+                view=_VODReviewView(self.db, self.cfg, self.requester_id, self.state),
+            )
+            return
+
         await interaction.response.send_modal(
             _VODDetailsModal(
                 self.db,
@@ -1297,13 +1485,18 @@ class _VODManualEntryModal(discord.ui.Modal, title="Manual Entry"):
 
         self.state["title_query"] = self.state.get("title_query") or str(item.get("title") or "").strip()
         updated_state = _apply_vod_selected_item(self.state, item)
-        embed = _build_vod_question_embed(item, "Was this title requested through the Requests Bot?")
+        if _vod_editing(updated_state):
+            embed = _build_vod_review_embed(updated_state)
+            view = _VODReviewView(self.db, self.cfg, self.requester_id, updated_state)
+        else:
+            embed = _build_vod_question_embed(item, "Was this title requested through the Requests Bot?")
+            view = _VODRequestedQuestionView(self.db, self.cfg, self.requester_id, updated_state)
 
         try:
             await self.launcher_interaction.edit_original_response(
                 content=None,
                 embed=embed,
-                view=_VODRequestedQuestionView(self.db, self.cfg, self.requester_id, updated_state),
+                view=view,
             )
             return
         except Exception:
@@ -1311,7 +1504,7 @@ class _VODManualEntryModal(discord.ui.Modal, title="Manual Entry"):
 
         await interaction.followup.send(
             embed=embed,
-            view=_VODRequestedQuestionView(self.db, self.cfg, self.requester_id, updated_state),
+            view=view,
             ephemeral=True,
         )
 
@@ -1542,6 +1735,14 @@ class _VODTitleResultsView(_VODStepView):
             return await interaction.response.send_message("❌ Invalid title selection.", ephemeral=True)
 
         _apply_vod_selected_item(self.state, item)
+        if _vod_editing(self.state):
+            await interaction.response.edit_message(
+                content=None,
+                embed=_build_vod_review_embed(self.state),
+                view=_VODReviewView(self.db, self.cfg, self.requester_id, self.state),
+            )
+            return
+
         embed = _build_vod_question_embed(item, "Was this title requested through the Requests Bot?")
         await interaction.response.edit_message(
             content=None,
