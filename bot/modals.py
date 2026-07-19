@@ -1052,6 +1052,7 @@ class _VODRequestedQuestionView(_VODStepView):
                 options=[
                     discord.SelectOption(label="Yes", value="Yes"),
                     discord.SelectOption(label="No", value="No"),
+                    discord.SelectOption(label="Not sure", value="Not sure"),
                 ],
                 custom_id="vodstep:requested",
             )
