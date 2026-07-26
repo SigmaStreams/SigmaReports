@@ -74,7 +74,7 @@ def _build_ticket_embed(report: dict, reporter: discord.abc.User, guild: discord
 
         embed.add_field(name="Title", value=title or "Unknown", inline=False)
         embed.add_field(name="Requested Through Bot", value=requested, inline=True)
-        embed.add_field(name="English or Foreign", value=language, inline=True)
+        embed.add_field(name="Title Library", value=language, inline=True)
         embed.add_field(name="Device", value=device, inline=True)
 
         if ref:

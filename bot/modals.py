@@ -259,6 +259,8 @@ def _normalize_vod_language(value: str) -> str:
         return "English"
     if normalized == "foreign":
         return "Foreign"
+    if normalized == "anime":
+        return "Anime"
     return "Unknown"
 
 
@@ -922,7 +924,7 @@ def _build_vod_review_embed(state: dict) -> discord.Embed:
         value=str(state.get("requested_via_bot") or "—"),
         inline=True,
     )
-    embed.add_field(name="Language", value=str(state.get("language") or "—"), inline=True)
+    embed.add_field(name="Title Library", value=str(state.get("language") or "—"), inline=True)
     embed.add_field(name="4K", value=str(state.get("is_4k") or "—"), inline=True)
     if str(state.get("is_remux") or "").strip():
         embed.add_field(name="Remux", value=str(state["is_remux"]), inline=True)
@@ -1091,7 +1093,7 @@ class _VODReviewEditSelect(discord.ui.Select):
         options = [
             discord.SelectOption(label="Title", value="title"),
             discord.SelectOption(label="Requested Through Bot", value="requested"),
-            discord.SelectOption(label="Language", value="language"),
+            discord.SelectOption(label="Title Library", value="language"),
             discord.SelectOption(label="4K", value="4k"),
         ]
         if include_remux:
@@ -1134,7 +1136,7 @@ class _VODReviewView(_VODStepView):
             prompt = "Was this title requested through the Requests Bot?"
             view = _VODRequestedQuestionView(self.db, self.cfg, self.requester_id, self.state)
         elif field == "language":
-            prompt = "English or Foreign?"
+            prompt = "Which library is this title in? This refers to the title library, not the audio language."
             view = _VODLanguageQuestionView(self.db, self.cfg, self.requester_id, self.state)
         elif field == "4k":
             prompt = "Is this a 4K title?"
@@ -1226,7 +1228,10 @@ class _VODRequestedQuestionView(_VODStepView):
 
         await interaction.response.edit_message(
             content=None,
-            embed=_build_vod_question_embed(self.state, "English or Foreign?"),
+            embed=_build_vod_question_embed(
+                self.state,
+                "Which library is this title in? This refers to the title library, not the audio language.",
+            ),
             view=_VODLanguageQuestionView(self.db, self.cfg, self.requester_id, self.state),
         )
 
@@ -1236,10 +1241,11 @@ class _VODLanguageQuestionView(_VODStepView):
         super().__init__(db, cfg, requester_id, state)
         self.add_item(
             _VODSelect(
-                placeholder="English or Foreign?",
+                placeholder="Select the title library",
                 options=[
                     discord.SelectOption(label="English", value="English"),
                     discord.SelectOption(label="Foreign", value="Foreign"),
+                    discord.SelectOption(label="Anime", value="Anime"),
                 ],
                 custom_id="vodstep:language",
             )
