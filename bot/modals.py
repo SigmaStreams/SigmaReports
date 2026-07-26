@@ -1113,7 +1113,7 @@ class _VODReviewEditSelect(discord.ui.Select):
             discord.SelectOption(label="Title", value="title"),
             discord.SelectOption(label="Requested Through Bot", value="requested"),
             discord.SelectOption(label="Title Library", value="language"),
-            discord.SelectOption(label="Affected Media Library", value="4k"),
+            discord.SelectOption(label="Affected Media Version", value="4k"),
         ]
         options.append(discord.SelectOption(label="Device or Issue", value="details"))
 
@@ -1152,7 +1152,7 @@ class _VODReviewView(_VODStepView):
             prompt = "Which library is this title in? This refers to the title library, not the audio language."
             view = _VODLanguageQuestionView(self.db, self.cfg, self.requester_id, self.state)
         elif field == "4k":
-            prompt = "Which library is this report regarding?"
+            prompt = "Which version of the title has the issue?"
             view = _VOD4KQuestionView(
                 self.db,
                 self.cfg,
@@ -1281,7 +1281,7 @@ class _VODLanguageQuestionView(_VODStepView):
             content=None,
             embed=_build_vod_question_embed(
                 self.state,
-                "Which library is this report regarding?",
+                "Which version of the title has the issue?",
             ),
             view=_VOD4KQuestionView(
                 self.db,
@@ -1322,7 +1322,7 @@ class _VOD4KQuestionView(_VODStepView):
             )
         self.add_item(
             _VODSelect(
-                placeholder="Select the affected library",
+                placeholder="Select the affected version",
                 options=options,
                 custom_id="vodstep:4k",
             )
