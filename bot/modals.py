@@ -255,8 +255,8 @@ def _is_tmdb_movie_link(url: str) -> bool:
 
 def _normalize_vod_language(value: str) -> str:
     normalized = (value or "").strip().lower()
-    if normalized == "english":
-        return "English"
+    if normalized in ("english", "neither"):
+        return "Neither"
     if normalized == "foreign":
         return "Foreign"
     if normalized == "anime":
@@ -1149,7 +1149,10 @@ class _VODReviewView(_VODStepView):
             prompt = "Was this title requested through the Requests Bot?"
             view = _VODRequestedQuestionView(self.db, self.cfg, self.requester_id, self.state)
         elif field == "language":
-            prompt = "Which library is this title in? This refers to the title library, not the audio language."
+            prompt = (
+                "Which library, if any, does this title belong to? "
+                "This refers to the title library, not the audio language."
+            )
             view = _VODLanguageQuestionView(self.db, self.cfg, self.requester_id, self.state)
         elif field == "4k":
             prompt = "Which version of the title has the issue?"
@@ -1246,7 +1249,8 @@ class _VODRequestedQuestionView(_VODStepView):
             content=None,
             embed=_build_vod_question_embed(
                 self.state,
-                "Which library is this title in? This refers to the title library, not the audio language.",
+                "Which library, if any, does this title belong to? "
+                "This refers to the title library, not the audio language.",
             ),
             view=_VODLanguageQuestionView(self.db, self.cfg, self.requester_id, self.state),
         )
@@ -1259,7 +1263,7 @@ class _VODLanguageQuestionView(_VODStepView):
             _VODSelect(
                 placeholder="Select the title library",
                 options=[
-                    discord.SelectOption(label="English", value="English"),
+                    discord.SelectOption(label="Neither", value="Neither"),
                     discord.SelectOption(label="Foreign", value="Foreign"),
                     discord.SelectOption(label="Anime", value="Anime"),
                 ],

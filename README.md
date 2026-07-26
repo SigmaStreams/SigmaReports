@@ -55,7 +55,7 @@ Docker is the recommended setup because it avoids local Python version drift, us
 ### VOD flow
 - Uses a guided questionnaire instead of a single freeform form.
 - Collects whether the title was requested through the Requests Bot.
-- Collects the title library (English, Foreign, or Anime—not the audio language) and the affected media library (HD, 4K, both, Remux, 4K Remux, or both remux libraries), then asks for a title search.
+- Collects whether the title belongs to the Foreign library, Anime library, or neither (not its audio language), then asks which media version is affected.
 - Lets users select the correct title from TMDB/TVDB search results in a dropdown.
 - Automatically determines whether the selected result is a movie or TV show.
 - Automatically stores the reference link from the selected source:
