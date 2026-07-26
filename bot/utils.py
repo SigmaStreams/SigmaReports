@@ -209,7 +209,7 @@ def build_staff_embed(
 
         embed.add_field(name="Title", value=str(vod_title), inline=False)
         embed.add_field(name="Requested Through Bot", value=str(requested), inline=True)
-        embed.add_field(name="Title Library", value=str(language), inline=True)
+        embed.add_field(name="Content Library", value=str(language), inline=True)
         embed.add_field(name="Device", value=str(device), inline=True)
 
         ref = _ref_link_field(payload)

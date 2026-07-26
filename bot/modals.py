@@ -255,8 +255,8 @@ def _is_tmdb_movie_link(url: str) -> bool:
 
 def _normalize_vod_language(value: str) -> str:
     normalized = (value or "").strip().lower()
-    if normalized in ("english", "neither"):
-        return "Neither"
+    if normalized in ("english", "neither", "standard"):
+        return "Standard"
     if normalized == "foreign":
         return "Foreign"
     if normalized == "anime":
@@ -943,7 +943,7 @@ def _build_vod_review_embed(state: dict) -> discord.Embed:
         value=str(state.get("requested_via_bot") or "—"),
         inline=True,
     )
-    embed.add_field(name="Title Library", value=str(state.get("language") or "—"), inline=True)
+    embed.add_field(name="Content Library", value=str(state.get("language") or "—"), inline=True)
     embed.add_field(name="HD / 4K Library", value=str(state.get("is_4k") or "—"), inline=True)
     if str(state.get("is_remux") or "").strip():
         embed.add_field(name="Remux", value=str(state["is_remux"]), inline=True)
@@ -1112,7 +1112,7 @@ class _VODReviewEditSelect(discord.ui.Select):
         options = [
             discord.SelectOption(label="Title", value="title"),
             discord.SelectOption(label="Requested Through Bot", value="requested"),
-            discord.SelectOption(label="Title Library", value="language"),
+            discord.SelectOption(label="Content Library", value="language"),
             discord.SelectOption(label="Affected Media Version", value="4k"),
         ]
         options.append(discord.SelectOption(label="Device or Issue", value="details"))
@@ -1150,8 +1150,9 @@ class _VODReviewView(_VODStepView):
             view = _VODRequestedQuestionView(self.db, self.cfg, self.requester_id, self.state)
         elif field == "language":
             prompt = (
-                "Which library, if any, does this title belong to? "
-                "This refers to the title library, not the audio language."
+                "Which content library contains this title? "
+                "Standard includes regular HD and 4K movies and shows. "
+                "This is not about the audio language."
             )
             view = _VODLanguageQuestionView(self.db, self.cfg, self.requester_id, self.state)
         elif field == "4k":
@@ -1249,8 +1250,9 @@ class _VODRequestedQuestionView(_VODStepView):
             content=None,
             embed=_build_vod_question_embed(
                 self.state,
-                "Which library, if any, does this title belong to? "
-                "This refers to the title library, not the audio language.",
+                "Which content library contains this title? "
+                "Standard includes regular HD and 4K movies and shows. "
+                "This is not about the audio language.",
             ),
             view=_VODLanguageQuestionView(self.db, self.cfg, self.requester_id, self.state),
         )
@@ -1261,9 +1263,9 @@ class _VODLanguageQuestionView(_VODStepView):
         super().__init__(db, cfg, requester_id, state)
         self.add_item(
             _VODSelect(
-                placeholder="Select the title library",
+                placeholder="Select the content library",
                 options=[
-                    discord.SelectOption(label="Neither", value="Neither"),
+                    discord.SelectOption(label="Standard", value="Standard"),
                     discord.SelectOption(label="Foreign", value="Foreign"),
                     discord.SelectOption(label="Anime", value="Anime"),
                 ],
