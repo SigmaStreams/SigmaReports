@@ -216,7 +216,7 @@ def build_staff_embed(
         if ref:
             embed.add_field(name=ref[0], value=ref[1], inline=True)
 
-        embed.add_field(name="4K Title", value=str(is_4k), inline=True)
+        embed.add_field(name="HD / 4K Library", value=str(is_4k), inline=True)
         if str((payload or {}).get("is_remux") or "").strip():
             embed.add_field(name="Remux", value=str(is_remux), inline=True)
         embed.add_field(name="Movie or TV Show", value=str(content_type), inline=True)

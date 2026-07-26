@@ -267,9 +267,11 @@ def _normalize_vod_language(value: str) -> str:
 def _normalize_vod_4k(value: str) -> str:
     normalized = (value or "").strip().lower()
     if normalized in ("yes", "true", "4k"):
-        return "Yes"
+        return "4K"
     if normalized in ("no", "false", "fhd", "non-4k"):
-        return "No"
+        return "HD"
+    if normalized == "both":
+        return "Both"
     return "Unknown"
 
 
@@ -925,7 +927,7 @@ def _build_vod_review_embed(state: dict) -> discord.Embed:
         inline=True,
     )
     embed.add_field(name="Title Library", value=str(state.get("language") or "—"), inline=True)
-    embed.add_field(name="4K", value=str(state.get("is_4k") or "—"), inline=True)
+    embed.add_field(name="HD / 4K Library", value=str(state.get("is_4k") or "—"), inline=True)
     if str(state.get("is_remux") or "").strip():
         embed.add_field(name="Remux", value=str(state["is_remux"]), inline=True)
     embed.add_field(name="Device", value=str(state.get("device") or "—"), inline=False)
@@ -1094,7 +1096,7 @@ class _VODReviewEditSelect(discord.ui.Select):
             discord.SelectOption(label="Title", value="title"),
             discord.SelectOption(label="Requested Through Bot", value="requested"),
             discord.SelectOption(label="Title Library", value="language"),
-            discord.SelectOption(label="4K", value="4k"),
+            discord.SelectOption(label="HD / 4K Library", value="4k"),
         ]
         if include_remux:
             options.append(discord.SelectOption(label="Remux", value="remux"))
@@ -1139,7 +1141,7 @@ class _VODReviewView(_VODStepView):
             prompt = "Which library is this title in? This refers to the title library, not the audio language."
             view = _VODLanguageQuestionView(self.db, self.cfg, self.requester_id, self.state)
         elif field == "4k":
-            prompt = "Is this a 4K title?"
+            prompt = "Which library is this report regarding: HD, 4K, or both?"
             view = _VOD4KQuestionView(self.db, self.cfg, self.requester_id, self.state)
         elif field == "remux":
             prompt = "Is this title a remux?"
@@ -1263,7 +1265,10 @@ class _VODLanguageQuestionView(_VODStepView):
 
         await interaction.response.edit_message(
             content=None,
-            embed=_build_vod_question_embed(self.state, "Is this a 4K title?"),
+            embed=_build_vod_question_embed(
+                self.state,
+                "Which library is this report regarding: HD, 4K, or both?",
+            ),
             view=_VOD4KQuestionView(self.db, self.cfg, self.requester_id, self.state),
         )
 
@@ -1273,10 +1278,11 @@ class _VOD4KQuestionView(_VODStepView):
         super().__init__(db, cfg, requester_id, state)
         self.add_item(
             _VODSelect(
-                placeholder="Is this a 4K title?",
+                placeholder="Select HD, 4K, or both",
                 options=[
-                    discord.SelectOption(label="Yes", value="Yes"),
-                    discord.SelectOption(label="No", value="No"),
+                    discord.SelectOption(label="HD", value="HD"),
+                    discord.SelectOption(label="4K", value="4K"),
+                    discord.SelectOption(label="Both", value="Both"),
                 ],
                 custom_id="vodstep:4k",
             )

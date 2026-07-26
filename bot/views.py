@@ -81,7 +81,7 @@ def _build_ticket_embed(report: dict, reporter: discord.abc.User, guild: discord
             label = _nice_ref_label(ref)
             embed.add_field(name="Reference", value=f"[{label}]({ref})", inline=True)
 
-        embed.add_field(name="4K Title", value=is_4k, inline=True)
+        embed.add_field(name="HD / 4K Library", value=is_4k, inline=True)
         if str(payload.get("is_remux") or "").strip():
             embed.add_field(name="Remux", value=is_remux, inline=True)
         embed.add_field(name="Movie or TV Show", value=content_type_label, inline=True)
