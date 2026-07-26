@@ -58,21 +58,27 @@ def fetch_tmdb_titles(bearer_token: str, limit_each: int = 30) -> List[str]:
 def search_tmdb_movies(bearer_token: str, query: str, limit: int = 12) -> list[dict]:
     """
     Search TMDB movies by title.
-    Returns: [{id, title, year, content_type, source_db, reference_link}]
+    Returns title as the original title and english_title as TMDB's en-US title.
     """
     q = (query or "").strip()
     if not bearer_token or not q:
         return []
 
-    url = f"https://api.themoviedb.org/3/search/movie?query={quote(q)}&include_adult=false"
+    url = (
+        "https://api.themoviedb.org/3/search/movie"
+        f"?query={quote(q)}&include_adult=false&language=en-US"
+    )
     data = _tmdb_get(url, bearer_token)
     out: list[dict] = []
 
     for item in (data.get("results") or []):
         mid = item.get("id")
-        title = str(item.get("title") or "").strip()
+        english_title = str(item.get("title") or "").strip()
+        title = str(item.get("original_title") or english_title).strip()
         if not mid or not title:
             continue
+        if english_title.casefold() == title.casefold():
+            english_title = ""
 
         release_date = str(item.get("release_date") or "").strip()
         year = release_date[:4] if len(release_date) >= 4 and release_date[:4].isdigit() else ""
@@ -81,6 +87,7 @@ def search_tmdb_movies(bearer_token: str, query: str, limit: int = 12) -> list[d
             {
                 "id": int(mid),
                 "title": title,
+                "english_title": english_title,
                 "year": year,
                 "content_type": "movie",
                 "source_db": "tmdb",
@@ -118,10 +125,16 @@ def resolve_tmdb_movie_link(bearer_token: str, url: str) -> dict | None:
     if not bearer_token or movie_id is None:
         return None
 
-    data = _tmdb_get(f"https://api.themoviedb.org/3/movie/{movie_id}", bearer_token)
-    title = str(data.get("title") or "").strip()
+    data = _tmdb_get(
+        f"https://api.themoviedb.org/3/movie/{movie_id}?language=en-US",
+        bearer_token,
+    )
+    english_title = str(data.get("title") or "").strip()
+    title = str(data.get("original_title") or english_title).strip()
     if not title:
         return None
+    if english_title.casefold() == title.casefold():
+        english_title = ""
 
     release_date = str(data.get("release_date") or "").strip()
     year = release_date[:4] if len(release_date) >= 4 and release_date[:4].isdigit() else ""
@@ -129,6 +142,7 @@ def resolve_tmdb_movie_link(bearer_token: str, url: str) -> dict | None:
     return {
         "id": int(movie_id),
         "title": title,
+        "english_title": english_title,
         "year": year,
         "content_type": "movie",
         "source_db": "tmdb",

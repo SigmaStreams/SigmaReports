@@ -8,7 +8,7 @@ import discord
 from bot.db import ReportDB
 from bot.tmdb import resolve_tmdb_movie_link, search_tmdb_movies
 from bot.tvdb import resolve_tvdb_series_link, search_tvdb_series
-from bot.utils import build_staff_embed, report_subject, try_dm, vod_embed_color
+from bot.utils import _vod_english_title, build_staff_embed, report_subject, try_dm, vod_embed_color
 from bot.views import ReportActionView
 
 
@@ -744,6 +744,7 @@ def _new_vod_state() -> dict:
         "requested_via_bot": "",
         "title_query": "",
         "title": "",
+        "english_title": "",
         "language": "",
         "device": "",
         "reference_link": "",
@@ -850,6 +851,7 @@ def _is_supported_vod_reference_link(url: str) -> bool:
 
 def _apply_vod_selected_item(state: dict, item: dict) -> dict:
     state["title"] = str(item.get("title") or "").strip()
+    state["english_title"] = str(item.get("english_title") or "").strip()
     state["title_year"] = str(item.get("year") or "").strip()
     state["content_type"] = _normalize_vod_content_type(str(item.get("content_type") or ""))
     state["source_db"] = str(item.get("source_db") or "").strip()
@@ -880,6 +882,7 @@ def _build_vod_payload(state: dict) -> dict:
     return {
         "requested_via_bot": state["requested_via_bot"],
         "title": state["title"],
+        "english_title": state["english_title"],
         "title_query": state["title_query"],
         "title_year": state["title_year"],
         "language": state["language"],
@@ -908,6 +911,9 @@ def _build_vod_question_embed(data: dict, prompt: str) -> discord.Embed:
         color=vod_embed_color(),
     )
     embed.add_field(name="Title", value=label, inline=False)
+    english_title = _vod_english_title(data)
+    if english_title:
+        embed.add_field(name="English Title", value=english_title, inline=False)
     embed.add_field(name="Source", value=source, inline=True)
     embed.add_field(name="Type", value=content_type, inline=True)
     if year:
@@ -937,6 +943,9 @@ def _build_vod_review_embed(state: dict) -> discord.Embed:
         color=vod_embed_color(),
     )
     embed.add_field(name="Title", value=title_label or "Unknown", inline=False)
+    english_title = _vod_english_title(state)
+    if english_title:
+        embed.add_field(name="English Title", value=english_title, inline=False)
     embed.add_field(name="Type / Source", value=f"{content_type} • {source}", inline=True)
     embed.add_field(
         name="Requested Through Bot",
@@ -1206,7 +1215,7 @@ class _VODReviewView(_VODStepView):
             return
 
         await interaction.edit_original_response(
-            content=f"✅ Submitted VOD report **#{report_id}** for **{payload['title']}**.",
+            content=f"✅ Submitted VOD report **#{report_id}** for **{report_subject('vod', payload)}**.",
             embed=None,
             view=None,
         )
@@ -1570,13 +1579,14 @@ class _VODTitleResultSelect(discord.ui.Select):
 
         for item in page_items:
             title = str(item.get("title") or "Unknown").strip()
+            english_title = _vod_english_title(item)
             year = str(item.get("year") or "").strip()
             source = "TMDB" if str(item.get("source_db") or "") == "tmdb" else "TVDB"
             kind = "Movie" if str(item.get("content_type") or "") == "movie" else "TV Show"
             token = f"{str(item.get('source_db') or '').strip()}|{str(item.get('id') or '').strip()}"
 
             label = title[:100]
-            desc_parts = [kind, source]
+            desc_parts = [english_title, kind, source] if english_title else [kind, source]
             if year:
                 desc_parts.insert(1, year)
             description = " • ".join(desc_parts)[:100]

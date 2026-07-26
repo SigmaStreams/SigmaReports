@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import discord
 
 from bot.db import ReportDB
-from bot.utils import _vod_4k_label, _vod_device_label, _vod_language_label, _vod_remux_label, _vod_requested_label, _vod_type_label, build_staff_embed, report_subject, try_dm, vod_embed_color
+from bot.utils import _vod_4k_label, _vod_device_label, _vod_language_label, _vod_remux_label, _vod_requested_label, _vod_title_display, _vod_type_label, build_staff_embed, report_subject, try_dm, vod_embed_color
 
 
 CLOSED_STATUSES = {"Resolved", "Can't replicate", "Fixed", "Not Resolved"}
@@ -61,7 +61,7 @@ def _build_ticket_embed(report: dict, reporter: discord.abc.User, guild: discord
 
     elif rtype == "VOD":
         embed.color = vod_embed_color()
-        title = (payload.get("title") or "Unknown").strip()
+        title = _vod_title_display(payload)
         requested = _vod_requested_label(payload)
         language = _vod_language_label(payload)
         device = _vod_device_label(payload)
@@ -72,7 +72,7 @@ def _build_ticket_embed(report: dict, reporter: discord.abc.User, guild: discord
         issue = (payload.get("issue") or "—").strip()
         ref = (payload.get("reference_link") or "").strip()
 
-        embed.add_field(name="Title", value=title or "Unknown", inline=False)
+        embed.add_field(name="Title", value=title, inline=False)
         embed.add_field(name="Requested Through Bot", value=requested, inline=True)
         embed.add_field(name="Library", value=language, inline=True)
         embed.add_field(name="Device", value=device, inline=True)

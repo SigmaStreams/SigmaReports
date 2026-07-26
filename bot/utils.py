@@ -13,8 +13,9 @@ def report_subject(report_type: str, payload: dict) -> str:
         return str(name)
 
     if rt == "vod":
-        title = (payload or {}).get("title") or "VOD report"
-        return str(title)
+        title = str((payload or {}).get("title") or "VOD report").strip()
+        english_title = _vod_english_title(payload)
+        return f"{title} / {english_title}" if english_title else title
 
     return "Report"
 
@@ -116,6 +117,20 @@ def _vod_poster_url(payload: dict) -> str:
     return str((payload or {}).get("poster_url") or "").strip()
 
 
+def _vod_english_title(payload: dict) -> str:
+    title = str((payload or {}).get("title") or "").strip()
+    english_title = str((payload or {}).get("english_title") or "").strip()
+    if not english_title or english_title.casefold() == title.casefold():
+        return ""
+    return english_title
+
+
+def _vod_title_display(payload: dict) -> str:
+    title = str((payload or {}).get("title") or "Unknown").strip() or "Unknown"
+    english_title = _vod_english_title(payload)
+    return f"{title}\n*English: {english_title}*" if english_title else title
+
+
 def _iso_to_discord_ts(iso: Optional[str]) -> Optional[str]:
     if not iso:
         return None
@@ -198,7 +213,7 @@ def build_staff_embed(
 
     if rt == "VOD":
         embed.color = vod_embed_color()
-        vod_title = (payload or {}).get("title") or "Unknown"
+        vod_title = _vod_title_display(payload)
         requested = _vod_requested_label(payload)
         language = _vod_language_label(payload)
         device = _vod_device_label(payload)
