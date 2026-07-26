@@ -55,7 +55,7 @@ Docker is the recommended setup because it avoids local Python version drift, us
 ### VOD flow
 - Uses a guided questionnaire instead of a single freeform form.
 - Collects whether the title was requested through the Requests Bot.
-- Collects the title library (English, Foreign, or Anime—not the audio language) and whether the report concerns the HD library, 4K library, or both, then asks for a title search.
+- Collects the title library (English, Foreign, or Anime—not the audio language) and the affected media library (HD, 4K, both, Remux, 4K Remux, or both remux libraries), then asks for a title search.
 - Lets users select the correct title from TMDB/TVDB search results in a dropdown.
 - Automatically determines whether the selected result is a movie or TV show.
 - Automatically stores the reference link from the selected source:
@@ -168,7 +168,7 @@ Optional settings:
 Notes:
 - Split TV and VOD ping lists fall back to `STAFF_PING_USER_IDS` if the split lists are empty.
 - `DOUBLE_CONFIRMATION=true` makes the Live TV review screen require a second press of `Submit` before the report is actually sent.
-- Members with the role configured by `SS_VOD_REMUX_ROLE_ID` are asked `Is this title a remux?` after the 4K prompt; other members proceed directly to the VOD details form.
+- Members with the role configured by `SS_VOD_REMUX_ROLE_ID` also see `Remux`, `4K Remux`, and `Both Remux (HD + 4K)` in the affected-library selector; other members see `HD`, `4K`, and `Both (HD + 4K)`.
 - `TICKETS_CATEGORY_ID` controls which category new ticket channels are created under. If it is empty, tickets are created without a category.
 - Runtime data is stored under `./data` by default.
 - Do not commit `.env`.

@@ -268,11 +268,28 @@ def _normalize_vod_4k(value: str) -> str:
     normalized = (value or "").strip().lower()
     if normalized in ("yes", "true", "4k"):
         return "4K"
-    if normalized in ("no", "false", "fhd", "non-4k"):
+    if normalized in ("no", "false", "hd", "fhd", "non-4k"):
         return "HD"
     if normalized == "both":
         return "Both"
     return "Unknown"
+
+
+def _normalize_vod_library(value: str) -> tuple[str, str]:
+    normalized = (value or "").strip().lower()
+    if normalized == "remux":
+        return ("HD", "Yes")
+    if normalized in ("4k remux", "4k-remux"):
+        return ("4K", "Yes")
+    if normalized in ("both remux", "both-remux"):
+        return ("Both", "Yes")
+    return (_normalize_vod_4k(value), "")
+
+
+def _can_report_vod_remux(interaction: discord.Interaction, cfg) -> bool:
+    remux_role_id = int(getattr(cfg, "ss_vod_remux_role_id", 0) or 0)
+    member_roles = getattr(interaction.user, "roles", ())
+    return remux_role_id > 0 and any(role.id == remux_role_id for role in member_roles)
 
 
 def _normalize_vod_content_type(value: str) -> str:
@@ -874,7 +891,7 @@ def _build_vod_payload(state: dict) -> dict:
         "source_db": state["source_db"],
         "source_id": state["source_id"],
         "poster_url": state["poster_url"],
-        "quality": "4K" if state["is_4k"] == "Yes" else "Non-4K",
+        "quality": "4K" if state["is_4k"] in ("4K", "Both") else "Non-4K",
         "issue": state["issue"],
     }
 
@@ -1091,15 +1108,13 @@ class _VODSelect(discord.ui.Select):
 
 
 class _VODReviewEditSelect(discord.ui.Select):
-    def __init__(self, *, include_remux: bool):
+    def __init__(self):
         options = [
             discord.SelectOption(label="Title", value="title"),
             discord.SelectOption(label="Requested Through Bot", value="requested"),
             discord.SelectOption(label="Title Library", value="language"),
-            discord.SelectOption(label="HD / 4K Library", value="4k"),
+            discord.SelectOption(label="Affected Media Library", value="4k"),
         ]
-        if include_remux:
-            options.append(discord.SelectOption(label="Remux", value="remux"))
         options.append(discord.SelectOption(label="Device or Issue", value="details"))
 
         super().__init__(
@@ -1117,11 +1132,7 @@ class _VODReviewEditSelect(discord.ui.Select):
 class _VODReviewView(_VODStepView):
     def __init__(self, db: ReportDB, cfg, requester_id: int, state: dict):
         super().__init__(db, cfg, requester_id, state)
-        self.add_item(
-            _VODReviewEditSelect(
-                include_remux=bool(str(self.state.get("is_remux") or "").strip()),
-            )
-        )
+        self.add_item(_VODReviewEditSelect())
 
     async def handle_edit(self, interaction: discord.Interaction, field: str):
         self.state["_edit_vod_field"] = field
@@ -1141,11 +1152,14 @@ class _VODReviewView(_VODStepView):
             prompt = "Which library is this title in? This refers to the title library, not the audio language."
             view = _VODLanguageQuestionView(self.db, self.cfg, self.requester_id, self.state)
         elif field == "4k":
-            prompt = "Which library is this report regarding: HD, 4K, or both?"
-            view = _VOD4KQuestionView(self.db, self.cfg, self.requester_id, self.state)
-        elif field == "remux":
-            prompt = "Is this title a remux?"
-            view = _VODRemuxQuestionView(self.db, self.cfg, self.requester_id, self.state)
+            prompt = "Which library is this report regarding?"
+            view = _VOD4KQuestionView(
+                self.db,
+                self.cfg,
+                self.requester_id,
+                self.state,
+                include_remux=_can_report_vod_remux(interaction, self.cfg),
+            )
         elif field == "details":
             await interaction.response.send_modal(
                 _VODDetailsModal(
@@ -1267,74 +1281,55 @@ class _VODLanguageQuestionView(_VODStepView):
             content=None,
             embed=_build_vod_question_embed(
                 self.state,
-                "Which library is this report regarding: HD, 4K, or both?",
+                "Which library is this report regarding?",
             ),
-            view=_VOD4KQuestionView(self.db, self.cfg, self.requester_id, self.state),
+            view=_VOD4KQuestionView(
+                self.db,
+                self.cfg,
+                self.requester_id,
+                self.state,
+                include_remux=_can_report_vod_remux(interaction, self.cfg),
+            ),
         )
 
 
 class _VOD4KQuestionView(_VODStepView):
-    def __init__(self, db: ReportDB, cfg, requester_id: int, state: dict):
+    def __init__(
+        self,
+        db: ReportDB,
+        cfg,
+        requester_id: int,
+        state: dict,
+        *,
+        include_remux: bool,
+    ):
         super().__init__(db, cfg, requester_id, state)
+        options = [
+            discord.SelectOption(label="HD", value="HD"),
+            discord.SelectOption(label="4K", value="4K"),
+            discord.SelectOption(label="Both (HD + 4K)", value="Both"),
+        ]
+        if include_remux:
+            options.extend(
+                [
+                    discord.SelectOption(label="Remux", value="Remux"),
+                    discord.SelectOption(label="4K Remux", value="4K Remux"),
+                    discord.SelectOption(
+                        label="Both Remux (HD + 4K)",
+                        value="Both Remux",
+                    ),
+                ]
+            )
         self.add_item(
             _VODSelect(
-                placeholder="Select HD, 4K, or both",
-                options=[
-                    discord.SelectOption(label="HD", value="HD"),
-                    discord.SelectOption(label="4K", value="4K"),
-                    discord.SelectOption(label="Both", value="Both"),
-                ],
+                placeholder="Select the affected library",
+                options=options,
                 custom_id="vodstep:4k",
             )
         )
 
     async def handle_selection(self, interaction: discord.Interaction, value: str):
-        self.state["is_4k"] = _normalize_vod_4k(value)
-        if _vod_editing(self.state):
-            await interaction.response.edit_message(
-                content=None,
-                embed=_build_vod_review_embed(self.state),
-                view=_VODReviewView(self.db, self.cfg, self.requester_id, self.state),
-            )
-            return
-
-        remux_role_id = int(getattr(self.cfg, "ss_vod_remux_role_id", 0) or 0)
-        member_roles = getattr(interaction.user, "roles", ())
-        if any(role.id == remux_role_id for role in member_roles):
-            return await interaction.response.edit_message(
-                content=None,
-                embed=_build_vod_question_embed(self.state, "Is this title a remux?"),
-                view=_VODRemuxQuestionView(self.db, self.cfg, self.requester_id, self.state),
-            )
-
-        await interaction.response.send_modal(
-            _VODDetailsModal(
-                self.db,
-                self.cfg,
-                self.requester_id,
-                self.state,
-                interaction,
-            )
-        )
-
-
-class _VODRemuxButton(discord.ui.Button):
-    def __init__(self, *, label: str, value: str, style: discord.ButtonStyle):
-        super().__init__(label=label, style=style)
-        self.value = value
-
-    async def callback(self, interaction: discord.Interaction):
-        await self.view.handle_selection(interaction, self.value)
-
-
-class _VODRemuxQuestionView(_VODStepView):
-    def __init__(self, db: ReportDB, cfg, requester_id: int, state: dict):
-        super().__init__(db, cfg, requester_id, state)
-        self.add_item(_VODRemuxButton(label="Yes", value="Yes", style=discord.ButtonStyle.success))
-        self.add_item(_VODRemuxButton(label="No", value="No", style=discord.ButtonStyle.secondary))
-
-    async def handle_selection(self, interaction: discord.Interaction, value: str):
-        self.state["is_remux"] = value
+        self.state["is_4k"], self.state["is_remux"] = _normalize_vod_library(value)
         if _vod_editing(self.state):
             await interaction.response.edit_message(
                 content=None,
