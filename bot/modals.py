@@ -943,7 +943,7 @@ def _build_vod_review_embed(state: dict) -> discord.Embed:
         value=str(state.get("requested_via_bot") or "—"),
         inline=True,
     )
-    embed.add_field(name="Content Library", value=str(state.get("language") or "—"), inline=True)
+    embed.add_field(name="Library", value=str(state.get("language") or "—"), inline=True)
     embed.add_field(name="HD / 4K Library", value=str(state.get("is_4k") or "—"), inline=True)
     if str(state.get("is_remux") or "").strip():
         embed.add_field(name="Remux", value=str(state["is_remux"]), inline=True)
@@ -1112,7 +1112,7 @@ class _VODReviewEditSelect(discord.ui.Select):
         options = [
             discord.SelectOption(label="Title", value="title"),
             discord.SelectOption(label="Requested Through Bot", value="requested"),
-            discord.SelectOption(label="Content Library", value="language"),
+            discord.SelectOption(label="Library", value="language"),
             discord.SelectOption(label="Affected Media Version", value="4k"),
         ]
         options.append(discord.SelectOption(label="Device or Issue", value="details"))
@@ -1150,7 +1150,7 @@ class _VODReviewView(_VODStepView):
             view = _VODRequestedQuestionView(self.db, self.cfg, self.requester_id, self.state)
         elif field == "language":
             prompt = (
-                "Which content library contains this title? "
+                "Which library contains this title? "
                 "Standard includes regular HD and 4K movies and shows. "
                 "This is not about the audio language."
             )
@@ -1250,7 +1250,7 @@ class _VODRequestedQuestionView(_VODStepView):
             content=None,
             embed=_build_vod_question_embed(
                 self.state,
-                "Which content library contains this title? "
+                "Which library contains this title? "
                 "Standard includes regular HD and 4K movies and shows. "
                 "This is not about the audio language.",
             ),
@@ -1263,7 +1263,7 @@ class _VODLanguageQuestionView(_VODStepView):
         super().__init__(db, cfg, requester_id, state)
         self.add_item(
             _VODSelect(
-                placeholder="Select the content library",
+                placeholder="Select the library",
                 options=[
                     discord.SelectOption(label="Standard", value="Standard"),
                     discord.SelectOption(label="Foreign", value="Foreign"),
