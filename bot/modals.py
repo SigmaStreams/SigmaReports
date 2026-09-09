@@ -1032,8 +1032,7 @@ class _VODDetailsModal(discord.ui.Modal, title="VOD Report Details"):
         self.issue = discord.ui.TextInput(
             label="What is the issue?",
             placeholder=(
-                "Describe the problem. If multiple episodes are affected, list them here "
-                "(e.g. season 2, episodes 3 to 5)."
+                "Describe the problem. List affected episodes here (e.g. season 2, episodes 3 to 5)."
                 if self.state.get("content_type") == "tv"
                 else "Please include as much detail as possible."
             ),

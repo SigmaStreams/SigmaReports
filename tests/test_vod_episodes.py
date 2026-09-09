@@ -44,6 +44,16 @@ class EpisodeTests(unittest.TestCase):
 
 
 class EpisodeFlowTests(unittest.IsolatedAsyncioTestCase):
+    async def test_details_modal_placeholders_fit_discord_limit(self):
+        for content_type in ("tv", "movie"):
+            with self.subTest(content_type=content_type):
+                state = _new_vod_state()
+                state["content_type"] = content_type
+                modal = _VODDetailsModal(None, None, 1, state, None)
+                for row in modal.to_dict()["components"]:
+                    for component in row["components"]:
+                        self.assertLessEqual(len(component.get("placeholder", "")), 100)
+
     async def test_tv_fields_and_outage_fallback(self):
         state = _new_vod_state()
         state.update(content_type='tv', season_number=2, episode_number=3, title='Show')
