@@ -180,3 +180,21 @@ def resolve_tvdb_series_link(api_key: str, url: str) -> dict | None:
         if english_title and english_title.casefold() != str(selected.get("title") or "").strip().casefold():
             selected["english_title"] = english_title
     return selected
+
+
+def lookup_tvdb_episode(api_key: str, series_id: str, season: int, episode: int) -> dict | None:
+    """Optionally enrich user-entered numbers using TVDB's official episode order."""
+    if not api_key or not str(series_id).isdigit():
+        return None
+    token = _tvdb_login(api_key)
+    if not token:
+        return None
+    data = _tvdb_request(
+        f"https://api4.thetvdb.com/v4/series/{series_id}/episodes/official"
+        f"?page=0&season={season}&episodeNumber={episode}", token=token, timeout=5,
+    )
+    for item in (data.get("data") or {}).get("episodes") or []:
+        if item.get("seasonNumber") == season and item.get("number") == episode:
+            return {"episode_tvdb_id": str(item.get("id") or ""),
+                    "episode_title": str(item.get("name") or "").strip()[:200]}
+    return None

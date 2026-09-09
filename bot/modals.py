@@ -7,8 +7,8 @@ import discord
 
 from bot.db import ReportDB
 from bot.tmdb import resolve_tmdb_movie_link, search_tmdb_movies
-from bot.tvdb import resolve_tvdb_series_link, search_tvdb_series
-from bot.utils import _vod_english_title, build_staff_embed, report_subject, try_dm, vod_embed_color
+from bot.tvdb import resolve_tvdb_series_link, search_tvdb_series, lookup_tvdb_episode
+from bot.utils import _vod_episode_label, _vod_english_title, build_staff_embed, report_subject, try_dm, vod_embed_color
 from bot.views import ReportActionView
 
 
@@ -760,7 +760,7 @@ def _new_vod_state() -> dict:
 
 
 def _vod_title_placeholder() -> str:
-    return "Example: 2012 or Family Guy S02E03"
+    return "Example: 2012 or Family Guy"
 
 
 def _vod_result_label(item: dict) -> str:
@@ -850,6 +850,8 @@ def _is_supported_vod_reference_link(url: str) -> bool:
 
 
 def _apply_vod_selected_item(state: dict, item: dict) -> dict:
+    for key in ("season_number", "episode_number", "episode_title", "episode_tvdb_id"):
+        state.pop(key, None)
     state["title"] = str(item.get("title") or "").strip()
     state["english_title"] = str(item.get("english_title") or "").strip()
     state["title_year"] = str(item.get("year") or "").strip()
@@ -894,6 +896,7 @@ def _build_vod_payload(state: dict) -> dict:
         "source_db": state["source_db"],
         "source_id": state["source_id"],
         "poster_url": state["poster_url"],
+        **{key: state.get(key) for key in ("season_number", "episode_number", "episode_title", "episode_tvdb_id") if state.get("content_type") == "tv"},
         "quality": "4K" if state["is_4k"] in ("4K", "Both") else "Non-4K",
         "issue": state["issue"],
     }
@@ -946,6 +949,8 @@ def _build_vod_review_embed(state: dict) -> discord.Embed:
     english_title = _vod_english_title(state)
     if english_title:
         embed.add_field(name="English Title", value=english_title, inline=False)
+    if state.get("content_type") == "tv":
+        embed.add_field(name="Season / Episode", value=_vod_episode_label(state) or "Whole show / unspecified", inline=False)
     embed.add_field(name="Type / Source", value=f"{content_type} • {source}", inline=True)
     embed.add_field(
         name="Requested Through Bot",
@@ -997,6 +1002,18 @@ class _VODStepView(discord.ui.View):
             child.disabled = True
 
 
+def _parse_vod_episode_numbers(season: str, episode: str) -> tuple[int | None, int | None]:
+    values = []
+    for label, raw, minimum in (("Season", season, 0), ("Episode", episode, 1)):
+        raw = raw.strip()
+        if raw and (not raw.isascii() or not raw.isdecimal() or int(raw) < minimum):
+            raise ValueError(f"{label} must be a whole number of {minimum} or greater, or blank.")
+        values.append(int(raw) if raw else None)
+    if values[1] is not None and values[0] is None:
+        raise ValueError("Enter a season number when specifying an episode.")
+    return values[0], values[1]
+
+
 class _VODDetailsModal(discord.ui.Modal, title="VOD Report Details"):
     def __init__(self, db: ReportDB, cfg, requester_id: int, state: dict, launcher_interaction: discord.Interaction):
         super().__init__()
@@ -1020,14 +1037,54 @@ class _VODDetailsModal(discord.ui.Modal, title="VOD Report Details"):
             default=(self.state.get("issue") or None),
         )
 
+        if self.state.get("content_type") == "tv":
+            self.season = discord.ui.TextInput(
+                label="Season number (optional)",
+                placeholder="e.g. 2; 0 for specials; blank for whole show",
+                required=False, max_length=4,
+                default=str(self.state["season_number"]) if self.state.get("season_number") is not None else None,
+            )
+            self.episode = discord.ui.TextInput(
+                label="Episode number (optional)",
+                placeholder="e.g. 3; blank for whole season; ranges in issue",
+                required=False, max_length=4,
+                default=str(self.state["episode_number"]) if self.state.get("episode_number") is not None else None,
+            )
+            self.add_item(self.season)
+            self.add_item(self.episode)
         self.add_item(self.device)
         self.add_item(self.issue)
 
     async def on_submit(self, interaction: discord.Interaction):
+        if self.state.get("content_type") == "tv":
+            try:
+                season, episode = _parse_vod_episode_numbers(str(self.season), str(self.episode))
+            except ValueError as exc:
+                # Keep the entered details available when reopening the form.
+                self.state["device"] = str(self.device).strip()
+                self.state["issue"] = str(self.issue).strip()
+                await interaction.response.edit_message(
+                    content=str(exc), embed=None,
+                    view=_VODReviewTextQuestionsView(self.db, self.cfg, self.requester_id, self.state),
+                )
+                return
+            self.state.update(season_number=season, episode_number=episode,
+                              episode_title="", episode_tvdb_id="")
+        await interaction.response.defer()
+        if self.state.get("content_type") == "tv" and self.state.get("episode_number") is not None:
+            try:
+                metadata = await asyncio.wait_for(asyncio.to_thread(
+                    lookup_tvdb_episode, getattr(self.cfg, "tvdb_key", ""),
+                    self.state.get("source_id", ""), self.state["season_number"], self.state["episode_number"],
+                ), timeout=8)
+                if metadata:
+                    self.state.update(metadata)
+            except Exception:
+                pass  # Metadata is optional; preserve the user's numbers during outages.
         self.state["device"] = str(self.device).strip()
         self.state["issue"] = str(self.issue).strip()
         self.state.pop("_edit_vod_field", None)
-        await interaction.response.edit_message(
+        await interaction.edit_original_response(
             content=None,
             embed=_build_vod_review_embed(self.state),
             view=_VODReviewView(self.db, self.cfg, self.requester_id, self.state),
@@ -1117,14 +1174,14 @@ class _VODSelect(discord.ui.Select):
 
 
 class _VODReviewEditSelect(discord.ui.Select):
-    def __init__(self):
+    def __init__(self, is_tv: bool = False):
         options = [
             discord.SelectOption(label="Title", value="title"),
             discord.SelectOption(label="Requested Through Bot", value="requested"),
             discord.SelectOption(label="Library", value="language"),
             discord.SelectOption(label="Affected Media Version", value="4k"),
         ]
-        options.append(discord.SelectOption(label="Device or Issue", value="details"))
+        options.append(discord.SelectOption(label="Season / Episode, Device or Issue" if is_tv else "Device or Issue", value="details"))
 
         super().__init__(
             placeholder="Change an answer",
@@ -1141,7 +1198,7 @@ class _VODReviewEditSelect(discord.ui.Select):
 class _VODReviewView(_VODStepView):
     def __init__(self, db: ReportDB, cfg, requester_id: int, state: dict):
         super().__init__(db, cfg, requester_id, state)
-        self.add_item(_VODReviewEditSelect())
+        self.add_item(_VODReviewEditSelect(state.get("content_type") == "tv"))
 
     async def handle_edit(self, interaction: discord.Interaction, field: str):
         self.state["_edit_vod_field"] = field

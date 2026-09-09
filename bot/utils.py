@@ -15,7 +15,9 @@ def report_subject(report_type: str, payload: dict) -> str:
     if rt == "vod":
         title = str((payload or {}).get("title") or "VOD report").strip()
         english_title = _vod_english_title(payload)
-        return f"{title} / {english_title}" if english_title else title
+        subject = f"{title} / {english_title}" if english_title else title
+        episode = _vod_episode_label(payload, include_title=False)
+        return f"{subject} • {episode}" if episode else subject
 
     return "Report"
 
@@ -125,10 +127,25 @@ def _vod_english_title(payload: dict) -> str:
     return english_title
 
 
+def _vod_episode_label(payload: dict, *, include_title: bool = True) -> str:
+    if payload.get("content_type") != "tv" or payload.get("season_number") is None:
+        return ""
+    label = f"S{int(payload['season_number']):02d}"
+    if payload.get("episode_number") is not None:
+        label += f"E{int(payload['episode_number']):02d}"
+    else:
+        label += " (whole season)"
+    if include_title and payload.get("episode_title"):
+        label += f" — {payload['episode_title']}"
+    return label
+
+
 def _vod_title_display(payload: dict) -> str:
     title = str((payload or {}).get("title") or "Unknown").strip() or "Unknown"
     english_title = _vod_english_title(payload)
-    return f"{title}\n*English: {english_title}*" if english_title else title
+    display = f"{title}\n*English: {english_title}*" if english_title else title
+    episode = _vod_episode_label(payload)
+    return f"{display}\n{episode}" if episode else display
 
 
 def _iso_to_discord_ts(iso: Optional[str]) -> Optional[str]:
