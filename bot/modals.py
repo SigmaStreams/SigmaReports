@@ -850,7 +850,7 @@ def _is_supported_vod_reference_link(url: str) -> bool:
 
 
 def _apply_vod_selected_item(state: dict, item: dict) -> dict:
-    for key in ("season_number", "episode_number", "episode_title", "episode_tvdb_id"):
+    for key in ("season_number", "episode_number", "episode_title", "episode_tvdb_id", "episode_scope"):
         state.pop(key, None)
     state["title"] = str(item.get("title") or "").strip()
     state["english_title"] = str(item.get("english_title") or "").strip()
@@ -896,7 +896,7 @@ def _build_vod_payload(state: dict) -> dict:
         "source_db": state["source_db"],
         "source_id": state["source_id"],
         "poster_url": state["poster_url"],
-        **{key: state.get(key) for key in ("season_number", "episode_number", "episode_title", "episode_tvdb_id") if state.get("content_type") == "tv"},
+        **{key: state.get(key) for key in ("season_number", "episode_number", "episode_title", "episode_tvdb_id", "episode_scope") if state.get("content_type") == "tv"},
         "quality": "4K" if state["is_4k"] in ("4K", "Both") else "Non-4K",
         "issue": state["issue"],
     }
@@ -1033,7 +1033,9 @@ class _VODDetailsModal(discord.ui.Modal, title="VOD Report Details"):
         self.issue = discord.ui.TextInput(
             label="What is the issue?",
             placeholder=(
-                "Describe the problem. List affected episodes here (e.g. season 2, episodes 3 to 5)."
+                "List the affected episodes and describe the problem (e.g. episodes 3 to 5 have no audio)."
+                if self.state.get("episode_scope") == "multiple"
+                else "Describe the problem. List affected episodes here (e.g. season 2, episodes 3 to 5)."
                 if self.state.get("content_type") == "tv"
                 else "Please include as much detail as possible."
             ),
@@ -1074,7 +1076,7 @@ class _VODDetailsModal(discord.ui.Modal, title="VOD Report Details"):
                 )
                 return
             self.state.update(season_number=season, episode_number=episode,
-                              episode_title="", episode_tvdb_id="")
+                              episode_title="", episode_tvdb_id="", episode_scope="")
         await interaction.response.defer()
         if self.manual_numbers and self.state.get("content_type") == "tv" and self.state.get("episode_number") is not None:
             try:
@@ -1198,7 +1200,7 @@ async def _initial_vod_episode_picker(db, cfg, requester_id, state):
     regular_seasons = [season for season in seasons if season["number"] > 0]
     if len(regular_seasons) == 1 and regular_seasons[0]["number"] == 1:
         state = dict(state)
-        state.update(season_number=1, episode_number=None, episode_title="", episode_tvdb_id="")
+        state.update(season_number=1, episode_number=None, episode_title="", episode_tvdb_id="", episode_scope="")
         episodes = await _load_vod_episode_choices(cfg, list_tvdb_season_episodes, regular_seasons[0]["id"])
         return _VODEpisodePickerView(db, cfg, requester_id, state, episodes, "episode", seasons=seasons)
     return _VODEpisodePickerView(db, cfg, requester_id, state, seasons, "season")
@@ -1233,10 +1235,14 @@ class _VODEpisodePickerView(_VODStepView):
         self.previous.disabled = self.page == 0
         self.next_page.disabled = self.page == self.page_count - 1
         self.back.disabled = kind == "season"
+        if kind == "season":
+            self.remove_item(self.multiple)
 
     def build_embed(self):
         prompt = "Which season has the issue?" if self.kind == "season" else f"Which episode in season {self.state['season_number']} has the issue?"
-        prompt += "\nCan't find it? Use **Enter numbers manually**. For multiple episodes, list them in the issue description."
+        prompt += "\nCan't find it? Use **Enter numbers manually**."
+        if self.kind == "episode":
+            prompt += " For multiple episodes, choose **Multiple episodes**, then list them in the issue description."
         if not self.choices:
             prompt += "\nNo options could be loaded from TVDB. You can still enter numbers manually."
         embed = _build_vod_question_embed(self.state, prompt)
@@ -1259,7 +1265,7 @@ class _VODEpisodePickerView(_VODStepView):
         if value != "all" and item is None:
             await interaction.response.send_message("Invalid selection. Please choose again.", ephemeral=True)
             return
-        self.state.update(episode_number=None, episode_title="", episode_tvdb_id="")
+        self.state.update(episode_number=None, episode_title="", episode_tvdb_id="", episode_scope="")
         if self.kind == "season":
             self.state["season_number"] = None if value == "all" else item["number"]
             if value != "all":
@@ -1293,6 +1299,13 @@ class _VODEpisodePickerView(_VODStepView):
     async def back(self, interaction, button):
         view = _VODEpisodePickerView(self.db, self.cfg, self.requester_id, self.state, self.seasons, "season")
         await interaction.response.edit_message(content=None, embed=view.build_embed(), view=view)
+
+    @discord.ui.button(label="Multiple episodes", style=discord.ButtonStyle.primary, row=2)
+    async def multiple(self, interaction, button):
+        self.state.update(episode_number=None, episode_title="", episode_tvdb_id="", episode_scope="multiple")
+        await interaction.response.send_modal(
+            _VODDetailsModal(self.db, self.cfg, self.requester_id, self.state, interaction),
+        )
 
     @discord.ui.button(label="Whole show", style=discord.ButtonStyle.secondary, row=2)
     async def whole(self, interaction, button):

@@ -178,3 +178,40 @@ class PickerFlowTests(unittest.IsolatedAsyncioTestCase):
             empty = _VODEpisodePickerView(None, self.cfg, 1, self.state, [], kind)
             self.assertFalse(any(hasattr(child, 'options') for child in empty.children))
             self.assertFalse(empty.whole.disabled)
+
+    async def test_multiple_episodes_opens_details_and_persists_scope(self):
+        from bot.modals import _build_vod_payload
+        from bot.utils import _vod_title_display, report_subject
+        self.state.update(season_number=2, episode_number=3, episode_title='Old',
+                          episode_tvdb_id='old', _edit_vod_field='episodes')
+        view = _VODEpisodePickerView(None, self.cfg, 1, self.state, [], 'episode')
+        result = interaction()
+        await view.multiple.callback(result)
+        modal = result.response.send_modal.call_args.args[0]
+        self.assertEqual(len(modal.children), 2)
+        self.assertEqual(modal.state['season_number'], 2)
+        self.assertIsNone(modal.state['episode_number'])
+        self.assertEqual(modal.state['episode_title'], '')
+        self.assertLessEqual(len(modal.issue.placeholder), 100)
+        await modal.on_submit(interaction())
+        payload = _build_vod_payload(modal.state)
+        self.assertEqual(payload['episode_scope'], 'multiple')
+        self.assertIn('S02 (multiple episodes)', _vod_title_display(payload))
+        self.assertIn('S02 (multiple episodes)', report_subject('vod', payload))
+        self.assertNotIn('_edit_vod_field', modal.state)
+
+    async def test_changing_selection_clears_multiple_scope(self):
+        from bot.modals import _apply_vod_selected_item
+        self.state.update(season_number=2, episode_scope='multiple')
+        choices = [{'number': 3, 'episode_title': 'Third', 'episode_tvdb_id': '3'}]
+        for value in ('all', '3'):
+            view = _VODEpisodePickerView(None, self.cfg, 1, self.state, choices, 'episode')
+            await view.handle_selection(interaction(), value)
+            self.assertEqual(view.state['episode_scope'], '')
+        _apply_vod_selected_item(self.state, {'title': 'Other', 'content_type': 'tv'})
+        self.assertNotIn('episode_scope', self.state)
+
+    async def test_multiple_button_only_appears_after_season_selection(self):
+        for kind in ('season', 'episode'):
+            view = _VODEpisodePickerView(None, self.cfg, 1, self.state, [], kind)
+            self.assertEqual(view.multiple in view.children, kind == 'episode')

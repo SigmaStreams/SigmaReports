@@ -133,6 +133,8 @@ def _vod_episode_label(payload: dict, *, include_title: bool = True) -> str:
     label = f"S{int(payload['season_number']):02d}"
     if payload.get("episode_number") is not None:
         label += f"E{int(payload['episode_number']):02d}"
+    elif payload.get("episode_scope") == "multiple":
+        label += " (multiple episodes)"
     else:
         label += " (whole season)"
     if include_title and payload.get("episode_title"):
