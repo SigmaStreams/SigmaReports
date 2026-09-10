@@ -1036,8 +1036,8 @@ class _VODDetailsModal(discord.ui.Modal, title="VOD Report Details"):
                 "List the affected episodes and describe the problem (e.g. episodes 3 to 5 have no audio)."
                 if self.state.get("episode_scope") == "multiple"
                 else "Describe the problem. List affected episodes here (e.g. season 2, episodes 3 to 5)."
-                if self.state.get("content_type") == "tv"
-                else "Please include as much detail as possible."
+                if self.state.get("content_type") == "tv" and self.manual_numbers
+                else "Describe the problem. Please include as much detail as possible."
             ),
             max_length=1000,
             style=discord.TextStyle.paragraph,
