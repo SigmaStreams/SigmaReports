@@ -198,3 +198,43 @@ def lookup_tvdb_episode(api_key: str, series_id: str, season: int, episode: int)
             return {"episode_tvdb_id": str(item.get("id") or ""),
                     "episode_title": str(item.get("name") or "").strip()[:200]}
     return None
+
+
+def list_tvdb_seasons(api_key: str, series_id: str) -> list[dict]:
+    """List seasons in official order, including specials (season zero)."""
+    if not api_key or not str(series_id).isdigit():
+        return []
+    token = _tvdb_login(api_key)
+    if not token:
+        return []
+    data = _tvdb_request(
+        f"https://api4.thetvdb.com/v4/series/{series_id}/extended?short=true",
+        token=token, timeout=5,
+    )
+    seasons = {}
+    for item in (data.get("data") or {}).get("seasons") or []:
+        number = item.get("number")
+        if (item.get("type") or {}).get("type") != "official":
+            continue
+        if isinstance(number, int) and number >= 0 and item.get("id"):
+            seasons[number] = {"id": str(item["id"]), "number": number}
+    return [seasons[number] for number in sorted(seasons)]
+
+
+def list_tvdb_season_episodes(api_key: str, season_id: str) -> list[dict]:
+    """Fetch the complete season record; UI pagination happens locally."""
+    if not api_key or not str(season_id).isdigit():
+        return []
+    token = _tvdb_login(api_key)
+    if not token:
+        return []
+    data = _tvdb_request(
+        f"https://api4.thetvdb.com/v4/seasons/{season_id}/extended", token=token, timeout=5,
+    )
+    episodes = {}
+    for item in (data.get("data") or {}).get("episodes") or []:
+        number = item.get("number")
+        if isinstance(number, int) and number > 0:
+            episodes[number] = {"number": number, "episode_tvdb_id": str(item.get("id") or ""),
+                                "episode_title": str(item.get("name") or "").strip()[:200]}
+    return [episodes[number] for number in sorted(episodes)]

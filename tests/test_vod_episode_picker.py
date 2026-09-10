@@ -1,0 +1,119 @@
+import unittest
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
+
+from bot.modals import (_new_vod_state, _VODEpisodePickerView, _VODDetailsModal,
+                        _start_vod_episode_picker, _VOD4KQuestionView, _VODReviewView)
+from bot.tvdb import list_tvdb_seasons, list_tvdb_season_episodes
+
+
+def interaction():
+    return SimpleNamespace(response=SimpleNamespace(
+        defer=AsyncMock(), edit_message=AsyncMock(), send_modal=AsyncMock(), send_message=AsyncMock()),
+        edit_original_response=AsyncMock())
+
+
+class TVDBChoicesTests(unittest.TestCase):
+    @patch('bot.tvdb._tvdb_request')
+    def test_seasons_only_official_sorted_deduplicated(self, request):
+        request.side_effect = [{'data': {'token': 'token'}}, {'data': {'seasons': [
+            {'id': 3, 'number': 2, 'type': {'type': 'official'}},
+            {'id': 4, 'number': 1, 'type': {'type': 'dvd'}},
+            {'id': 5, 'number': 0, 'type': {'type': 'official'}},
+            {'id': 3, 'number': 2, 'type': {'type': 'official'}},
+        ]}}]
+        self.assertEqual(list_tvdb_seasons('key', '123'), [{'id': '5', 'number': 0}, {'id': '3', 'number': 2}])
+
+    @patch('bot.tvdb._tvdb_request')
+    def test_episodes_complete_season_sorted(self, request):
+        request.side_effect = [{'data': {'token': 'token'}}, {'data': {'episodes': [
+            {'id': n, 'number': n, 'name': f'Episode {n}'} for n in range(60, 0, -1)
+        ]}}]
+        episodes = list_tvdb_season_episodes('key', '5')
+        self.assertEqual(len(episodes), 60)
+        self.assertEqual(episodes[0]['number'], 1)
+        self.assertIn('/seasons/5/extended', request.call_args.args[0])
+
+
+class PickerFlowTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.state = _new_vod_state()
+        self.state.update(content_type='tv', source_id='123', title='Show')
+        self.cfg = SimpleNamespace(tvdb_key='key')
+
+    async def test_pagination_and_component_limits(self):
+        choices = [{'number': n, 'episode_title': 'Long title ' * 30, 'episode_tvdb_id': str(n)} for n in range(1, 61)]
+        self.state['season_number'] = 2
+        seen = []
+        for page in range(3):
+            view = _VODEpisodePickerView(None, self.cfg, 1, self.state, choices, 'episode', page)
+            for row in view.to_components():
+                for component in row['components']:
+                    options = component.get('options', [])
+                    self.assertLessEqual(len(options), 25)
+                    self.assertLessEqual(len(component.get('placeholder', '')), 100)
+                    for option in options:
+                        self.assertLessEqual(len(option['label']), 100)
+                        if option['value'] != 'all':
+                            seen.append(int(option['value']))
+        self.assertEqual(seen, list(range(1, 61)))
+
+    async def test_season_then_episode_then_details(self):
+        view = _VODEpisodePickerView(None, self.cfg, 1, self.state, [{'number': 0, 'id': '9'}], 'season')
+        first = interaction()
+        with patch('bot.modals.list_tvdb_season_episodes', return_value=[
+            {'number': 1, 'episode_title': 'Special', 'episode_tvdb_id': '10'}
+        ]):
+            await view.handle_selection(first, '0')
+        first.response.defer.assert_awaited_once()
+        episodes = first.edit_original_response.call_args.kwargs['view']
+        second = interaction()
+        await episodes.handle_selection(second, '1')
+        modal = second.response.send_modal.call_args.args[0]
+        self.assertEqual(len(modal.children), 2)
+        self.assertEqual(modal.state['season_number'], 0)
+        self.assertEqual(modal.state['episode_number'], 1)
+        self.assertEqual(modal.state['episode_title'], 'Special')
+
+    async def test_whole_show_and_review_edit(self):
+        self.state.update(season_number=2, episode_number=3, episode_title='Old', _edit_vod_field='episodes')
+        view = _VODEpisodePickerView(None, self.cfg, 1, self.state, [], 'season')
+        result = interaction()
+        await view.handle_selection(result, 'all')
+        review = result.response.edit_message.call_args.kwargs['view']
+        self.assertIsInstance(review, _VODReviewView)
+        self.assertIsNone(review.state['season_number'])
+        self.assertIsNone(review.state['episode_number'])
+        self.assertEqual(review.state['episode_title'], '')
+
+    async def test_whole_season_and_manual_fallback(self):
+        self.state.update(season_number=2, episode_number=3, episode_title='Old')
+        view = _VODEpisodePickerView(None, self.cfg, 1, self.state, [], 'episode')
+        result = interaction()
+        await view.handle_selection(result, 'all')
+        modal = result.response.send_modal.call_args.args[0]
+        self.assertEqual(modal.state['season_number'], 2)
+        self.assertIsNone(modal.state['episode_number'])
+        result = interaction()
+        await view.manual.callback(result)
+        self.assertTrue(result.response.send_modal.call_args.args[0].manual_numbers)
+
+    async def test_outage_keeps_manual_entry_available(self):
+        result = interaction()
+        with patch('bot.modals.list_tvdb_seasons', side_effect=RuntimeError('offline')):
+            await _start_vod_episode_picker(result, None, self.cfg, 1, self.state)
+        view = result.edit_original_response.call_args.kwargs['view']
+        self.assertEqual(view.choices, [])
+        self.assertFalse(view.manual.disabled)
+
+    async def test_version_routes_tv_to_picker_and_movie_to_details(self):
+        for content_type in ('tv', 'movie'):
+            self.state['content_type'] = content_type
+            view = _VOD4KQuestionView(None, self.cfg, 1, self.state, include_remux=False)
+            result = interaction()
+            with patch('bot.modals.list_tvdb_seasons', return_value=[]):
+                await view.handle_selection(result, 'HD')
+            if content_type == 'tv':
+                self.assertIsInstance(result.edit_original_response.call_args.kwargs['view'], _VODEpisodePickerView)
+            else:
+                self.assertIsInstance(result.response.send_modal.call_args.args[0], _VODDetailsModal)

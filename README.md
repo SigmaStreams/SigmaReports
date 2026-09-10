@@ -58,9 +58,10 @@ Docker is the recommended setup because it avoids local Python version drift, us
 - Collects whether the title belongs to the Standard, Foreign, or Anime library (not its audio language), then asks which media version is affected.
 - Lets users select the correct title from TMDB/TVDB search results in a dropdown.
 - Shows the English title alongside the original title when TMDB/TVDB provides a different translation.
-- TV show details prompt for optional season and episode numbers (season 0 supports specials). Leave both blank for whole-show issues, or leave episode blank for a whole season; describe multiple episodes/ranges in the issue field.
-- Uses `TVDB_KEY` to look up an entered episode in TVDB official order and attach its title when available. Lookup failures do not block reports. See the [TVDB API specification](https://github.com/thetvdb/v4-api/blob/master/docs/swagger.yml).
-- Season/episode details are saved with the report and shown in review, staff/ticket displays, and report subjects. Edit them through **Change an answer → Season / Episode, Device or Issue**.
+- After selecting the affected version, TV reports show a season dropdown followed by an episode dropdown with episode names. Choose **Whole show**, **Whole season**, or a specific episode. Specials appear as season 0. Previous/Next buttons handle long lists.
+- **Enter numbers manually** is always available for missing listings or TVDB outages. Leave both numbers blank for whole-show issues, or episode blank for a season; describe multiple affected episodes in the issue field. The normal details form only asks for device and issue.
+- Uses `TVDB_KEY` to load seasons and episodes in TVDB official order, and look up manually entered episode titles when available. Lookup failures do not block reports. See the [TVDB API specification](https://github.com/thetvdb/v4-api/blob/master/docs/swagger.yml).
+- Season/episode details are saved with the report and shown in review, staff/ticket displays, and report subjects. Edit them through **Change an answer → Season / Episode**. Changing the show asks for a fresh season/episode selection.
 - Automatically determines whether the selected result is a movie or TV show.
 - Automatically stores the reference link from the selected source:
   - TMDB links for movies

@@ -49,7 +49,7 @@ class EpisodeFlowTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(content_type=content_type):
                 state = _new_vod_state()
                 state["content_type"] = content_type
-                modal = _VODDetailsModal(None, None, 1, state, None)
+                modal = _VODDetailsModal(None, None, 1, state, None, manual_numbers=True)
                 for row in modal.to_dict()["components"]:
                     for component in row["components"]:
                         self.assertLessEqual(len(component.get("placeholder", "")), 100)
@@ -57,7 +57,7 @@ class EpisodeFlowTests(unittest.IsolatedAsyncioTestCase):
     async def test_tv_fields_and_outage_fallback(self):
         state = _new_vod_state()
         state.update(content_type='tv', season_number=2, episode_number=3, title='Show')
-        modal = _VODDetailsModal(None, SimpleNamespace(tvdb_key='key'), 1, state, None)
+        modal = _VODDetailsModal(None, SimpleNamespace(tvdb_key='key'), 1, state, None, manual_numbers=True)
         self.assertEqual(len(modal.children), 4)
         interaction = SimpleNamespace(response=SimpleNamespace(defer=AsyncMock()),
                                       edit_original_response=AsyncMock())

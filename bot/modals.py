@@ -7,7 +7,7 @@ import discord
 
 from bot.db import ReportDB
 from bot.tmdb import resolve_tmdb_movie_link, search_tmdb_movies
-from bot.tvdb import resolve_tvdb_series_link, search_tvdb_series, lookup_tvdb_episode
+from bot.tvdb import resolve_tvdb_series_link, search_tvdb_series, lookup_tvdb_episode, list_tvdb_seasons, list_tvdb_season_episodes
 from bot.utils import _vod_episode_label, _vod_english_title, build_staff_embed, report_subject, try_dm, vod_embed_color
 from bot.views import ReportActionView
 
@@ -1015,13 +1015,14 @@ def _parse_vod_episode_numbers(season: str, episode: str) -> tuple[int | None, i
 
 
 class _VODDetailsModal(discord.ui.Modal, title="VOD Report Details"):
-    def __init__(self, db: ReportDB, cfg, requester_id: int, state: dict, launcher_interaction: discord.Interaction):
+    def __init__(self, db: ReportDB, cfg, requester_id: int, state: dict, launcher_interaction: discord.Interaction, *, manual_numbers: bool = False):
         super().__init__()
         self.db = db
         self.cfg = cfg
         self.requester_id = int(requester_id)
         self.state = dict(state)
         self.launcher_interaction = launcher_interaction
+        self.manual_numbers = manual_numbers
 
         self.device = discord.ui.TextInput(
             label="What device are you using?",
@@ -1041,7 +1042,7 @@ class _VODDetailsModal(discord.ui.Modal, title="VOD Report Details"):
             default=(self.state.get("issue") or None),
         )
 
-        if self.state.get("content_type") == "tv":
+        if self.manual_numbers and self.state.get("content_type") == "tv":
             self.season = discord.ui.TextInput(
                 label="Season number (optional)",
                 placeholder="e.g. 2; 0 for specials; blank for whole show",
@@ -1060,7 +1061,7 @@ class _VODDetailsModal(discord.ui.Modal, title="VOD Report Details"):
         self.add_item(self.issue)
 
     async def on_submit(self, interaction: discord.Interaction):
-        if self.state.get("content_type") == "tv":
+        if self.manual_numbers and self.state.get("content_type") == "tv":
             try:
                 season, episode = _parse_vod_episode_numbers(str(self.season), str(self.episode))
             except ValueError as exc:
@@ -1069,13 +1070,13 @@ class _VODDetailsModal(discord.ui.Modal, title="VOD Report Details"):
                 self.state["issue"] = str(self.issue).strip()
                 await interaction.response.edit_message(
                     content=str(exc), embed=None,
-                    view=_VODReviewTextQuestionsView(self.db, self.cfg, self.requester_id, self.state),
+                    view=_VODEpisodePickerView(self.db, self.cfg, self.requester_id, self.state, [], "season"),
                 )
                 return
             self.state.update(season_number=season, episode_number=episode,
                               episode_title="", episode_tvdb_id="")
         await interaction.response.defer()
-        if self.state.get("content_type") == "tv" and self.state.get("episode_number") is not None:
+        if self.manual_numbers and self.state.get("content_type") == "tv" and self.state.get("episode_number") is not None:
             try:
                 metadata = await asyncio.wait_for(asyncio.to_thread(
                     lookup_tvdb_episode, getattr(self.cfg, "tvdb_key", ""),
@@ -1177,6 +1178,119 @@ class _VODSelect(discord.ui.Select):
         await self.view.handle_selection(interaction, self.values[0])
 
 
+async def _load_vod_episode_choices(cfg, loader, identifier: str) -> list[dict]:
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(loader, getattr(cfg, "tvdb_key", ""), identifier), timeout=8,
+        )
+    except Exception:
+        return []
+
+
+async def _start_vod_episode_picker(interaction, db, cfg, requester_id, state):
+    await interaction.response.defer()
+    seasons = await _load_vod_episode_choices(cfg, list_tvdb_seasons, state.get("source_id", ""))
+    view = _VODEpisodePickerView(db, cfg, requester_id, state, seasons, "season")
+    await interaction.edit_original_response(content=None, embed=view.build_embed(), view=view)
+
+
+class _VODEpisodePickerView(_VODStepView):
+    PAGE_SIZE = 24  # One option is reserved for the whole show/season.
+
+    def __init__(self, db, cfg, requester_id, state, choices, kind, page=0, seasons=None):
+        super().__init__(db, cfg, requester_id, state)
+        self.choices = choices
+        self.kind = kind
+        self.seasons = choices if kind == "season" else (seasons or [])
+        self.page_count = max(1, (len(choices) + self.PAGE_SIZE - 1) // self.PAGE_SIZE)
+        self.page = min(max(0, page), self.page_count - 1)
+        options = [discord.SelectOption(
+            label="Whole show" if kind == "season" else "Whole season", value="all",
+        )]
+        for item in choices[self.page * self.PAGE_SIZE:(self.page + 1) * self.PAGE_SIZE]:
+            number = item["number"]
+            if kind == "season":
+                label = "Specials (Season 0)" if number == 0 else f"Season {number}"
+            else:
+                label = f"Episode {number}"
+                if item.get("episode_title"):
+                    label += f" — {item['episode_title']}"
+            options.append(discord.SelectOption(label=label[:100], value=str(number)))
+        self.add_item(_VODSelect(
+            placeholder="Select a season" if kind == "season" else "Select an episode",
+            options=options, custom_id=f"vodstep:{kind}",
+        ))
+        self.previous.disabled = self.page == 0
+        self.next_page.disabled = self.page == self.page_count - 1
+        self.back.disabled = kind == "season"
+
+    def build_embed(self):
+        prompt = "Which season has the issue?" if self.kind == "season" else f"Which episode in season {self.state['season_number']} has the issue?"
+        prompt += "\nCan't find it? Use **Enter numbers manually**. For several episodes, list them in the issue."
+        if not self.choices:
+            prompt += "\nNo options could be loaded from TVDB. You can still enter numbers manually."
+        embed = _build_vod_question_embed(self.state, prompt)
+        embed.set_footer(text=f"Page {self.page + 1} of {self.page_count}")
+        return embed
+
+    async def finish(self, interaction):
+        if _vod_editing(self.state):
+            await interaction.response.edit_message(
+                content=None, embed=_build_vod_review_embed(self.state),
+                view=_VODReviewView(self.db, self.cfg, self.requester_id, self.state),
+            )
+        else:
+            await interaction.response.send_modal(
+                _VODDetailsModal(self.db, self.cfg, self.requester_id, self.state, interaction),
+            )
+
+    async def handle_selection(self, interaction, value):
+        item = next((item for item in self.choices if str(item["number"]) == value), None)
+        if value != "all" and item is None:
+            await interaction.response.send_message("Invalid selection. Please choose again.", ephemeral=True)
+            return
+        self.state.update(episode_number=None, episode_title="", episode_tvdb_id="")
+        if self.kind == "season":
+            self.state["season_number"] = None if value == "all" else item["number"]
+            if value != "all":
+                await interaction.response.defer()
+                episodes = await _load_vod_episode_choices(self.cfg, list_tvdb_season_episodes, item["id"])
+                view = _VODEpisodePickerView(
+                    self.db, self.cfg, self.requester_id, self.state, episodes, "episode", seasons=self.seasons,
+                )
+                await interaction.edit_original_response(content=None, embed=view.build_embed(), view=view)
+                return
+        elif item is not None:
+            self.state.update(episode_number=item["number"], episode_title=item["episode_title"],
+                              episode_tvdb_id=item["episode_tvdb_id"])
+        await self.finish(interaction)
+
+    async def show_page(self, interaction, page):
+        view = _VODEpisodePickerView(
+            self.db, self.cfg, self.requester_id, self.state, self.choices, self.kind, page, self.seasons,
+        )
+        await interaction.response.edit_message(content=None, embed=view.build_embed(), view=view)
+
+    @discord.ui.button(label="Previous", style=discord.ButtonStyle.secondary, row=1)
+    async def previous(self, interaction, button):
+        await self.show_page(interaction, self.page - 1)
+
+    @discord.ui.button(label="Next", style=discord.ButtonStyle.secondary, row=1)
+    async def next_page(self, interaction, button):
+        await self.show_page(interaction, self.page + 1)
+
+    @discord.ui.button(label="Change season", style=discord.ButtonStyle.secondary, row=1)
+    async def back(self, interaction, button):
+        view = _VODEpisodePickerView(self.db, self.cfg, self.requester_id, self.state, self.seasons, "season")
+        await interaction.response.edit_message(content=None, embed=view.build_embed(), view=view)
+
+    @discord.ui.button(label="Enter numbers manually", style=discord.ButtonStyle.primary, row=2)
+    async def manual(self, interaction, button):
+        await interaction.response.send_modal(
+            _VODDetailsModal(self.db, self.cfg, self.requester_id, self.state, interaction, manual_numbers=True),
+        )
+
+
 class _VODReviewEditSelect(discord.ui.Select):
     def __init__(self, is_tv: bool = False):
         options = [
@@ -1185,7 +1299,9 @@ class _VODReviewEditSelect(discord.ui.Select):
             discord.SelectOption(label="Library", value="language"),
             discord.SelectOption(label="Affected Media Version", value="4k"),
         ]
-        options.append(discord.SelectOption(label="Season / Episode, Device or Issue" if is_tv else "Device or Issue", value="details"))
+        if is_tv:
+            options.append(discord.SelectOption(label="Season / Episode", value="episodes"))
+        options.append(discord.SelectOption(label="Device or Issue", value="details"))
 
         super().__init__(
             placeholder="Change an answer",
@@ -1234,6 +1350,9 @@ class _VODReviewView(_VODStepView):
                 self.state,
                 include_remux=_can_report_vod_remux(interaction, self.cfg),
             )
+        elif field == "episodes":
+            await _start_vod_episode_picker(interaction, self.db, self.cfg, self.requester_id, self.state)
+            return
         elif field == "details":
             await interaction.response.send_modal(
                 _VODDetailsModal(
@@ -1414,6 +1533,10 @@ class _VOD4KQuestionView(_VODStepView):
             )
             return
 
+        if self.state.get("content_type") == "tv":
+            await _start_vod_episode_picker(interaction, self.db, self.cfg, self.requester_id, self.state)
+            return
+
         await interaction.response.send_modal(
             _VODDetailsModal(
                 self.db,
@@ -1569,8 +1692,14 @@ class _VODManualEntryModal(discord.ui.Modal, title="Manual Entry"):
         self.state["title_query"] = self.state.get("title_query") or str(item.get("title") or "").strip()
         updated_state = _apply_vod_selected_item(self.state, item)
         if _vod_editing(updated_state):
-            embed = _build_vod_review_embed(updated_state)
-            view = _VODReviewView(self.db, self.cfg, self.requester_id, updated_state)
+            if updated_state.get("content_type") == "tv":
+                updated_state["_edit_vod_field"] = "episodes"
+                seasons = await _load_vod_episode_choices(self.cfg, list_tvdb_seasons, updated_state["source_id"])
+                view = _VODEpisodePickerView(self.db, self.cfg, self.requester_id, updated_state, seasons, "season")
+                embed = view.build_embed()
+            else:
+                embed = _build_vod_review_embed(updated_state)
+                view = _VODReviewView(self.db, self.cfg, self.requester_id, updated_state)
         else:
             embed = _build_vod_question_embed(item, "Was this title requested through the Requests Bot?")
             view = _VODRequestedQuestionView(self.db, self.cfg, self.requester_id, updated_state)
@@ -1820,6 +1949,10 @@ class _VODTitleResultsView(_VODStepView):
 
         _apply_vod_selected_item(self.state, item)
         if _vod_editing(self.state):
+            if self.state.get("content_type") == "tv":
+                self.state["_edit_vod_field"] = "episodes"
+                await _start_vod_episode_picker(interaction, self.db, self.cfg, self.requester_id, self.state)
+                return
             await interaction.response.edit_message(
                 content=None,
                 embed=_build_vod_review_embed(self.state),
