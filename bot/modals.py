@@ -1236,7 +1236,7 @@ class _VODEpisodePickerView(_VODStepView):
 
     def build_embed(self):
         prompt = "Which season has the issue?" if self.kind == "season" else f"Which episode in season {self.state['season_number']} has the issue?"
-        prompt += "\nCan't find it? Use **Enter numbers manually**. For several episodes, list them in the issue."
+        prompt += "\nCan't find it? Use **Enter numbers manually**. For multiple episodes, list them in the issue description."
         if not self.choices:
             prompt += "\nNo options could be loaded from TVDB. You can still enter numbers manually."
         embed = _build_vod_question_embed(self.state, prompt)
