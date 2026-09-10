@@ -1189,13 +1189,23 @@ async def _load_vod_episode_choices(cfg, loader, identifier: str) -> list[dict]:
 
 async def _start_vod_episode_picker(interaction, db, cfg, requester_id, state):
     await interaction.response.defer()
-    seasons = await _load_vod_episode_choices(cfg, list_tvdb_seasons, state.get("source_id", ""))
-    view = _VODEpisodePickerView(db, cfg, requester_id, state, seasons, "season")
+    view = await _initial_vod_episode_picker(db, cfg, requester_id, state)
     await interaction.edit_original_response(content=None, embed=view.build_embed(), view=view)
 
 
+async def _initial_vod_episode_picker(db, cfg, requester_id, state):
+    seasons = await _load_vod_episode_choices(cfg, list_tvdb_seasons, state.get("source_id", ""))
+    regular_seasons = [season for season in seasons if season["number"] > 0]
+    if len(regular_seasons) == 1 and regular_seasons[0]["number"] == 1:
+        state = dict(state)
+        state.update(season_number=1, episode_number=None, episode_title="", episode_tvdb_id="")
+        episodes = await _load_vod_episode_choices(cfg, list_tvdb_season_episodes, regular_seasons[0]["id"])
+        return _VODEpisodePickerView(db, cfg, requester_id, state, episodes, "episode", seasons=seasons)
+    return _VODEpisodePickerView(db, cfg, requester_id, state, seasons, "season")
+
+
 class _VODEpisodePickerView(_VODStepView):
-    PAGE_SIZE = 24  # One option is reserved for the whole show/season.
+    PAGE_SIZE = 25
 
     def __init__(self, db, cfg, requester_id, state, choices, kind, page=0, seasons=None):
         super().__init__(db, cfg, requester_id, state)
@@ -1204,9 +1214,8 @@ class _VODEpisodePickerView(_VODStepView):
         self.seasons = choices if kind == "season" else (seasons or [])
         self.page_count = max(1, (len(choices) + self.PAGE_SIZE - 1) // self.PAGE_SIZE)
         self.page = min(max(0, page), self.page_count - 1)
-        options = [discord.SelectOption(
-            label="Whole show" if kind == "season" else "Whole season", value="all",
-        )]
+        options = []
+        self.whole.label = "Whole show" if kind == "season" else "Whole season"
         for item in choices[self.page * self.PAGE_SIZE:(self.page + 1) * self.PAGE_SIZE]:
             number = item["number"]
             if kind == "season":
@@ -1216,10 +1225,11 @@ class _VODEpisodePickerView(_VODStepView):
                 if item.get("episode_title"):
                     label += f" — {item['episode_title']}"
             options.append(discord.SelectOption(label=label[:100], value=str(number)))
-        self.add_item(_VODSelect(
-            placeholder="Select a season" if kind == "season" else "Select an episode",
-            options=options, custom_id=f"vodstep:{kind}",
-        ))
+        if options:
+            self.add_item(_VODSelect(
+                placeholder="Select a season" if kind == "season" else "Select an episode",
+                options=options, custom_id=f"vodstep:{kind}",
+            ))
         self.previous.disabled = self.page == 0
         self.next_page.disabled = self.page == self.page_count - 1
         self.back.disabled = kind == "season"
@@ -1283,6 +1293,10 @@ class _VODEpisodePickerView(_VODStepView):
     async def back(self, interaction, button):
         view = _VODEpisodePickerView(self.db, self.cfg, self.requester_id, self.state, self.seasons, "season")
         await interaction.response.edit_message(content=None, embed=view.build_embed(), view=view)
+
+    @discord.ui.button(label="Whole show", style=discord.ButtonStyle.secondary, row=2)
+    async def whole(self, interaction, button):
+        await self.handle_selection(interaction, "all")
 
     @discord.ui.button(label="Enter numbers manually", style=discord.ButtonStyle.primary, row=2)
     async def manual(self, interaction, button):
@@ -1694,8 +1708,7 @@ class _VODManualEntryModal(discord.ui.Modal, title="Manual Entry"):
         if _vod_editing(updated_state):
             if updated_state.get("content_type") == "tv":
                 updated_state["_edit_vod_field"] = "episodes"
-                seasons = await _load_vod_episode_choices(self.cfg, list_tvdb_seasons, updated_state["source_id"])
-                view = _VODEpisodePickerView(self.db, self.cfg, self.requester_id, updated_state, seasons, "season")
+                view = await _initial_vod_episode_picker(self.db, self.cfg, self.requester_id, updated_state)
                 embed = view.build_embed()
             else:
                 embed = _build_vod_review_embed(updated_state)

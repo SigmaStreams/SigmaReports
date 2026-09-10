@@ -79,7 +79,7 @@ class PickerFlowTests(unittest.IsolatedAsyncioTestCase):
         self.state.update(season_number=2, episode_number=3, episode_title='Old', _edit_vod_field='episodes')
         view = _VODEpisodePickerView(None, self.cfg, 1, self.state, [], 'season')
         result = interaction()
-        await view.handle_selection(result, 'all')
+        await view.whole.callback(result)
         review = result.response.edit_message.call_args.kwargs['view']
         self.assertIsInstance(review, _VODReviewView)
         self.assertIsNone(review.state['season_number'])
@@ -90,7 +90,7 @@ class PickerFlowTests(unittest.IsolatedAsyncioTestCase):
         self.state.update(season_number=2, episode_number=3, episode_title='Old')
         view = _VODEpisodePickerView(None, self.cfg, 1, self.state, [], 'episode')
         result = interaction()
-        await view.handle_selection(result, 'all')
+        await view.whole.callback(result)
         modal = result.response.send_modal.call_args.args[0]
         self.assertEqual(modal.state['season_number'], 2)
         self.assertIsNone(modal.state['episode_number'])
@@ -117,3 +117,64 @@ class PickerFlowTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIsInstance(result.edit_original_response.call_args.kwargs['view'], _VODEpisodePickerView)
             else:
                 self.assertIsInstance(result.response.send_modal.call_args.args[0], _VODDetailsModal)
+
+    async def test_single_season_auto_selects_and_keeps_specials_accessible(self):
+        for specials in ([], [{"number": 0, "id": "8"}]):
+            seasons = specials + [{"number": 1, "id": "9"}]
+            self.state.update(episode_number=5, episode_title="Old", episode_tvdb_id="old",
+                              _edit_vod_field="episodes")
+            result = interaction()
+            with patch('bot.modals.list_tvdb_seasons', return_value=seasons), patch(
+                'bot.modals.list_tvdb_season_episodes', return_value=[
+                    {"number": 1, "episode_title": "Pilot", "episode_tvdb_id": "10"}
+                ]
+            ) as load:
+                await _start_vod_episode_picker(result, None, self.cfg, 1, self.state)
+            view = result.edit_original_response.call_args.kwargs['view']
+            self.assertEqual(view.kind, 'episode')
+            self.assertEqual(view.state['season_number'], 1)
+            self.assertIsNone(view.state['episode_number'])
+            self.assertEqual(view.state['episode_title'], '')
+            self.assertEqual(view.state['_edit_vod_field'], 'episodes')
+            load.assert_called_once_with('key', '9')
+            back = interaction()
+            await view.back.callback(back)
+            season_view = back.response.edit_message.call_args.kwargs['view']
+            self.assertEqual(season_view.kind, 'season')
+            self.assertEqual(season_view.choices, seasons)
+
+    async def test_other_season_lists_still_prompt_for_season(self):
+        for seasons in ([], [{"number": 0, "id": "8"}], [{"number": 2, "id": "9"}],
+                        [{"number": 1, "id": "9"}, {"number": 2, "id": "10"}]):
+            result = interaction()
+            with patch('bot.modals.list_tvdb_seasons', return_value=seasons), patch(
+                'bot.modals.list_tvdb_season_episodes'
+            ) as load:
+                await _start_vod_episode_picker(result, None, self.cfg, 1, self.state)
+            self.assertEqual(result.edit_original_response.call_args.kwargs['view'].kind, 'season')
+            load.assert_not_called()
+
+    async def test_single_season_episode_outage_allows_manual_entry(self):
+        result = interaction()
+        with patch('bot.modals.list_tvdb_seasons', return_value=[{"number": 1, "id": "9"}]), patch(
+            'bot.modals.list_tvdb_season_episodes', side_effect=RuntimeError('offline')
+        ):
+            await _start_vod_episode_picker(result, None, self.cfg, 1, self.state)
+        view = result.edit_original_response.call_args.kwargs['view']
+        self.assertEqual(view.kind, 'episode')
+        self.assertEqual(view.state['season_number'], 1)
+        self.assertFalse(view.manual.disabled)
+
+    async def test_whole_scope_button_is_separate_from_paginated_choices(self):
+        for kind in ('season', 'episode'):
+            choices = [{"number": n, "id": str(n)} for n in range(1, 52)]
+            for page in range(3):
+                view = _VODEpisodePickerView(None, self.cfg, 1, self.state, choices, kind, page)
+                self.assertEqual(view.whole.label, 'Whole show' if kind == 'season' else 'Whole season')
+                selects = [child for child in view.children if hasattr(child, 'options')]
+                self.assertEqual(len(selects), 1)
+                self.assertEqual(len(selects[0].options), 25 if page < 2 else 1)
+                self.assertNotIn('all', [option.value for option in selects[0].options])
+            empty = _VODEpisodePickerView(None, self.cfg, 1, self.state, [], kind)
+            self.assertFalse(any(hasattr(child, 'options') for child in empty.children))
+            self.assertFalse(empty.whole.disabled)
