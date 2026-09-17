@@ -46,6 +46,7 @@ class Config:
     modlogs_channel_id: int
     responses_channel_id: int
     transcripts_channel_id: int
+    ticket_close_delay_minutes: int = 10
 
 
 def load_config() -> Config:
@@ -80,6 +81,13 @@ def load_config() -> Config:
     if not vod_staff_ping_user_ids:
         vod_staff_ping_user_ids = staff_ping_user_ids
 
+    try:
+        ticket_close_delay_minutes = int(os.getenv("TICKET_CLOSE_DELAY_MINUTES", "10"))
+    except ValueError:
+        raise RuntimeError("TICKET_CLOSE_DELAY_MINUTES must be a positive whole number") from None
+    if ticket_close_delay_minutes <= 0:
+        raise RuntimeError("TICKET_CLOSE_DELAY_MINUTES must be a positive whole number")
+
     public_updates = _get_bool("PUBLIC_UPDATES", True)
     double_confirmation = _get_bool("DOUBLE_CONFIRMATION", False)
     db_path = os.getenv("DB_PATH", "./data/reports.sqlite3").strip()
@@ -103,6 +111,7 @@ def load_config() -> Config:
 
     return Config(
         token=token,
+        ticket_close_delay_minutes=ticket_close_delay_minutes,
         staff_channel_id=staff_channel_id,
         support_channel_id=support_channel_id,
         tickets_category_id=tickets_category_id,

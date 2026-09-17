@@ -15,6 +15,7 @@ from discord.ext import commands
 
 from bot.config import load_config
 from bot.db import ReportDB
+from bot.closure import TicketClosureManager
 from bot.views import ReportActionView, TicketResolveView
 
 try:
@@ -58,6 +59,10 @@ class SigmaReportsBot(commands.Bot):
 
         self.cfg = load_config()
         self.db = ReportDB(self.cfg.db_path)
+        self.ticket_closures = TicketClosureManager(
+            self, delay=self.cfg.ticket_close_delay_minutes * 60
+        )
+        self.add_listener(self.ticket_closures.on_message, "on_message")
 
         self._tmdb_cache: list[str] = []
         self._presence_task: Optional[asyncio.Task] = None

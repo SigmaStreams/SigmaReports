@@ -2069,10 +2069,21 @@ class ResolveReportModal(discord.ui.Modal):
     async def on_submit(self, interaction: discord.Interaction):
         if not interaction.guild:
             return await interaction.response.send_message("❌ This can only be used in a server.", ephemeral=True)
-
         report = self.db.get_report_by_id(self.report_id)
         if not report or int(report.get("guild_id", 0)) != interaction.guild.id:
             return await interaction.response.send_message("❌ Report not found.", ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+        await interaction.client.ticket_closures.run(
+            interaction, self.db, self.report_id, self._finalize
+        )
+
+    async def _finalize(self, interaction: discord.Interaction):
+        if not interaction.guild:
+            return await interaction.followup.send("❌ This can only be used in a server.", ephemeral=True)
+
+        report = self.db.get_report_by_id(self.report_id)
+        if not report or int(report.get("guild_id", 0)) != interaction.guild.id:
+            return await interaction.followup.send("❌ Report not found.", ephemeral=True)
 
         resolver_id = int(interaction.user.id)
         note = str(self.details).strip()
@@ -2156,7 +2167,7 @@ class ResolveReportModal(discord.ui.Modal):
         except Exception:
             pass
 
-        await interaction.response.send_message("✅ Resolved.", ephemeral=True)
+        await interaction.followup.send("✅ Resolved.", ephemeral=True)
 
         # If this modal is being used inside the ticket channel, transcript + delete it
         if self.delete_current_channel and interaction.channel and isinstance(interaction.channel, discord.TextChannel):
@@ -2244,15 +2255,28 @@ class NotResolvedReportModal(discord.ui.Modal):
     async def on_submit(self, interaction: discord.Interaction):
         if not interaction.guild:
             return await interaction.response.send_message("❌ This can only be used in a server.", ephemeral=True)
-
         report = self.db.get_report_by_id(self.report_id)
         if not report or int(report.get("guild_id", 0)) != interaction.guild.id:
             return await interaction.response.send_message("❌ Report not found.", ephemeral=True)
+        if not str(self.details).strip():
+            return await interaction.response.send_message("❌ Details are required.", ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+        await interaction.client.ticket_closures.run(
+            interaction, self.db, self.report_id, self._finalize
+        )
+
+    async def _finalize(self, interaction: discord.Interaction):
+        if not interaction.guild:
+            return await interaction.followup.send("❌ This can only be used in a server.", ephemeral=True)
+
+        report = self.db.get_report_by_id(self.report_id)
+        if not report or int(report.get("guild_id", 0)) != interaction.guild.id:
+            return await interaction.followup.send("❌ Report not found.", ephemeral=True)
 
         resolver_id = int(interaction.user.id)
         note = str(self.details).strip()
         if not note:
-            return await interaction.response.send_message("❌ Details are required.", ephemeral=True)
+            return await interaction.followup.send("❌ Details are required.", ephemeral=True)
 
         # Pre-fetch reporter for transcripts + DMs
         reporter_u: discord.abc.User | None = None
@@ -2324,7 +2348,7 @@ class NotResolvedReportModal(discord.ui.Modal):
         except Exception:
             pass
 
-        await interaction.response.send_message("✅ Closed as not resolved.", ephemeral=True)
+        await interaction.followup.send("✅ Closed as not resolved.", ephemeral=True)
 
         if self.delete_current_channel and interaction.channel and isinstance(interaction.channel, discord.TextChannel):
             # transcript first

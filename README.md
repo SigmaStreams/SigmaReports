@@ -542,3 +542,24 @@ Owner-only commands:
 - The liveboard tracks active reports and removes closed ones.
 - Ticket creation is optional and happens from the staff side.
 - The bot syncs commands to a single guild during startup for faster iteration.
+
+### Ticket closure grace period
+
+Set `TICKET_CLOSE_DELAY_MINUTES=10` in `.env` to choose the countdown in minutes.
+Use a positive whole number (for example, `5` for five minutes); if omitted, it
+defaults to 10. Restart the bot after changing this setting. Ticket notices
+automatically display the configured duration.
+
+Submitting **Resolve** or **Not Resolved** (from the staff report, ticket, or
+`/closereport`) starts a configurable countdown (10 minutes by default) when the report has a linked ticket.
+The bot posts a notice in that ticket with a **Cancel** button. Anyone with access
+can cancel; any new message from someone other than this bot also cancels closure.
+The report stays open until the countdown expires. Cancellation keeps both the
+report and ticket open, and staff can start a fresh countdown later. Transcripts
+and closure notifications use the normal closure flow after the countdown.
+
+Repeated close requests do not replace an active countdown. Pending countdowns
+are held in memory: restarting the bot leaves those reports and tickets open, and
+staff must request closure again (old Cancel buttons are no longer active).
+Reports without tickets close immediately. The administrative
+`/close-open-reports` bulk cleanup command still closes reports immediately.
