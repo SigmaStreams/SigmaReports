@@ -117,6 +117,8 @@ class ReportDB:
 
         # Newer features
         self._ensure_column("reports", "ticket_channel_id", "INTEGER")
+        self._ensure_column("reports", "claimed_by_user_id", "INTEGER")
+        self._ensure_column("reports", "claimed_at", "TEXT")
         self._ensure_column("reports", "resolved_by", "INTEGER")
         self._ensure_column("reports", "resolved_at", "TEXT")
 
@@ -183,6 +185,25 @@ class ReportDB:
         cur.execute("UPDATE reports SET status=?, updated_at=? WHERE id=?", (status, _utcnow_iso(), int(report_id)))
         self.conn.commit()
 
+    def claim_report(self, report_id: int, staff_user_id: int) -> bool:
+        now = _utcnow_iso()
+        cur = self.conn.execute(
+            """UPDATE reports SET status='Claimed', claimed_by_user_id=?,
+               claimed_at=?, updated_at=? WHERE id=? AND status='Open'
+               AND ticket_channel_id IS NULL AND claimed_by_user_id IS NULL""",
+            (int(staff_user_id), now, now, int(report_id)),
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def mark_claimed(self, report_id: int, staff_user_id: int, claimed_at: str) -> None:
+        self.conn.execute(
+            """UPDATE reports SET claimed_by_user_id=?, claimed_at=?
+               WHERE id=? AND claimed_by_user_id IS NULL""",
+            (int(staff_user_id), claimed_at, int(report_id)),
+        )
+        self.conn.commit()
+
     def close_open_reports(self, guild_id: int) -> int:
         cur = self.conn.cursor()
         cur.execute(
@@ -191,7 +212,7 @@ class ReportDB:
             SET status='Resolved',
                 updated_at=?
             WHERE guild_id=?
-              AND status IN ('Open', 'Ticket Open')
+              AND status IN ('Open', 'Claimed', 'Ticket Open')
             """,
             (_utcnow_iso(), int(guild_id)),
         )
@@ -279,6 +300,9 @@ class ReportDB:
             "created_at": row["created_at"] if "created_at" in row.keys() else None,
             "updated_at": row["updated_at"] if "updated_at" in row.keys() else None,
         }
+
+        out["claimed_by_user_id"] = row["claimed_by_user_id"]
+        out["claimed_at"] = row["claimed_at"]
 
         if "ticket_channel_id" in row.keys():
             out["ticket_channel_id"] = row["ticket_channel_id"]

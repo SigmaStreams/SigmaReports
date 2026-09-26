@@ -124,6 +124,7 @@ class Reports(commands.Cog):
             self.cfg.staff_role_id,
             self.cfg.tickets_category_id,
         )
+        view.apply_report_state(report)
         if disable_actions:
             view.disable_all()
 
@@ -306,6 +307,7 @@ class Reports(commands.Cog):
                         self.cfg.staff_role_id,
                         self.cfg.tickets_category_id,
                     )
+                    view.apply_report_state(report)
 
                     await staff_msg.edit(embed=embed, view=view)
                 except Exception:
@@ -377,7 +379,7 @@ class Reports(commands.Cog):
 
         reports_to_close = self.db.list_reports_by_statuses(
             interaction.guild.id,
-            ("Open", "Ticket Open"),
+            ("Open", "Claimed", "Ticket Open"),
         )
         updated = self.db.close_open_reports(interaction.guild.id)
 
@@ -401,7 +403,7 @@ class Reports(commands.Cog):
 
         if updated == 0:
             return await interaction.response.send_message(
-                "No reports with status **Open** or **Ticket Open** were found.",
+                "No reports with status **Open**, **Claimed**, or **Ticket Open** were found.",
                 ephemeral=True,
             )
 
@@ -426,12 +428,12 @@ class Reports(commands.Cog):
 
         reports = self.db.list_reports_by_statuses(
             interaction.guild.id,
-            ("Open", "Ticket Open"),
+            ("Open", "Claimed", "Ticket Open"),
         )
 
         if not reports:
             return await interaction.response.send_message(
-                "No reports with status **Open** or **Ticket Open** were found.",
+                "No reports with status **Open**, **Claimed**, or **Ticket Open** were found.",
                 ephemeral=True,
             )
 
@@ -603,6 +605,7 @@ class Reports(commands.Cog):
             self.cfg.staff_role_id,
             self.cfg.tickets_category_id,
         )
+        view.apply_report_state(report)
 
         from bot.modals import build_staff_ping, _get_ping_ids_for_report
         ping_text = ""
@@ -707,6 +710,7 @@ class Reports(commands.Cog):
             self.cfg.staff_role_id,
             self.cfg.tickets_category_id,
         )
+        view.apply_report_state(report)
 
         await staff_msg.edit(embed=embed, view=view)
 

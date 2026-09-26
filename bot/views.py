@@ -210,6 +210,16 @@ class ReportActionView(discord.ui.View):
         self.staff_role_id = int(staff_role_id or 0)
         self.tickets_category_id = int(tickets_category_id or 0)
 
+    def apply_report_state(self, report: dict):
+        if report.get("status") in CLOSED_STATUSES:
+            self.disable_all()
+            return
+        self.claimed.disabled = bool(
+            report.get("claimed_by_user_id") or report.get("ticket_channel_id")
+            or report.get("status") in ("Claimed", "Ticket Open")
+        )
+        self.open_ticket.disabled = bool(report.get("ticket_channel_id"))
+
     def disable_all(self):
         for child in self.children:
             if isinstance(child, discord.ui.Button):
@@ -322,6 +332,56 @@ class ReportActionView(discord.ui.View):
         )
         await interaction.response.send_modal(modal)
 
+    @discord.ui.button(label="Claimed", style=discord.ButtonStyle.secondary, custom_id="report:claimed")
+    async def claimed(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self._ensure_staff_channel(interaction):
+            return
+        if not interaction.message:
+            return await interaction.response.send_message("❌ Couldn’t read the report message.", ephemeral=True)
+        report = self.db.get_by_staff_message_id(interaction.message.id)
+        if not report:
+            return await interaction.response.send_message("❌ Report not found.", ephemeral=True)
+
+        cfg = getattr(interaction.client, "cfg", None)
+        responses = interaction.guild.get_channel(int(getattr(cfg, "responses_channel_id", 0) or 0))
+        if not isinstance(responses, discord.TextChannel):
+            return await interaction.response.send_message("❌ Responses channel not found. Configure RESPONSES_CHANNEL_ID before claiming reports.", ephemeral=True)
+        reporter = interaction.client.get_user(int(report["reporter_id"]))
+        if reporter is None:
+            reporter = await interaction.client.fetch_user(int(report["reporter_id"]))
+        if not self.db.claim_report(report["id"], interaction.user.id):
+            return await interaction.response.send_message("⚠️ This report is already claimed, closed, or has an open ticket.", ephemeral=True)
+
+        await interaction.response.defer(ephemeral=True)
+        report = self.db.get_report_by_id(report["id"])
+        source = interaction.guild.get_channel(int(report["source_channel_id"])) or interaction.channel
+        embed = build_staff_embed(
+            report["id"], report["report_type"], reporter, source, report["payload"], report["status"],
+            claimed_by_user_id=report["claimed_by_user_id"], claimed_at=report["claimed_at"],
+        )
+        view = ReportActionView(self.db, self.staff_channel_id, self.support_channel_id,
+                                self.public_updates, self.staff_role_id, self.tickets_category_id)
+        view.apply_report_state(report)
+        subject = report_subject(report["report_type"], report["payload"])
+        message = (
+            f"<@{reporter.id}>\nThe issue described in your report [#{report['id']} - {subject[:1500]}] "
+            "has been confirmed. Please keep an eye on this channel and your DMs for updates."
+        )
+        errors = []
+        try:
+            await interaction.message.edit(embed=embed, view=view)
+        except discord.HTTPException:
+            errors.append("the staff embed could not be updated")
+        try:
+            await responses.send(content=message, allowed_mentions=discord.AllowedMentions(
+                users=[reporter], roles=False, everyone=False, replied_user=False))
+        except discord.HTTPException:
+            errors.append("the reporter notification could not be sent")
+        result = "✅ Report marked as Claimed."
+        if errors:
+            result += " ⚠️ " + "; ".join(errors) + "."
+        await interaction.followup.send(result, ephemeral=True)
+
     @discord.ui.button(label="Open ticket", style=discord.ButtonStyle.primary, custom_id="report:ticket")
     async def open_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self._ensure_staff_channel(interaction):
@@ -397,17 +457,11 @@ class ReportActionView(discord.ui.View):
 
         await ticket_channel.send(content=reporter.mention, embed=summary, view=resolve_view)
 
-        # Claim info (cosmetic): record + show on embed
-        claimed_by_user_id = int(interaction.user.id)
-        claimed_at = _now_iso()
-
-        if hasattr(self.db, "mark_claimed"):
-            try:
-                self.db.mark_claimed(int(report["id"]), claimed_by_user_id, claimed_at)  # type: ignore[attr-defined]
-            except Exception:
-                pass
-
+        self.db.mark_claimed(int(report["id"]), int(interaction.user.id), _now_iso())
         self.db.update_status(report["id"], "Ticket Open")
+        report = self.db.get_report_by_id(report["id"])
+        claimed_by_user_id = report["claimed_by_user_id"]
+        claimed_at = report["claimed_at"]
 
         source = guild.get_channel(int(report["source_channel_id"])) or interaction.channel
 
@@ -423,9 +477,8 @@ class ReportActionView(discord.ui.View):
             claimed_at=claimed_at,
         )
 
-        for child in self.children:
-            if isinstance(child, discord.ui.Button) and child.custom_id == "report:ticket":
-                child.disabled = True
-
-        await interaction.response.edit_message(embed=embed, view=self)
+        view = ReportActionView(self.db, self.staff_channel_id, self.support_channel_id,
+                                self.public_updates, self.staff_role_id, self.tickets_category_id)
+        view.apply_report_state(report)
+        await interaction.response.edit_message(embed=embed, view=view)
         await interaction.followup.send(f"✅ Ticket created: {ticket_channel.mention}", ephemeral=True)

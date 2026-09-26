@@ -73,6 +73,7 @@ Docker is the recommended setup because it avoids local Python version drift, us
 - Adds persistent staff action buttons to report messages:
   - `Resolved`
   - `Not Resolved`
+  - `Claimed` — keeps the report active, records who claimed it, and pings the reporter in `RESPONSES_CHANNEL_ID` with confirmation. Disabled after claiming or opening a ticket.
   - `Open ticket`
 - Supports opening a private ticket channel for staff plus the reporter.
 - Lets staff resolve or close reports directly from either the staff report message or the ticket channel.

@@ -271,6 +271,7 @@ def build_staff_embed(
             "✅ **Resolved** — mark the report as resolved and notify the reporter\n"
             "❌ **Not Resolved** — close the report with required details explaining why "
             "(e.g., issue cannot be replicated)\n"
+            "🙋 **Claimed** — confirm the issue and notify the reporter without closing it\n"
             "🎫 **Open ticket** — create a private ticket channel for staff + the reporter\n\n"
             "When working inside a ticket, use **Resolve** or **Not Resolved** there to finish and close it."
         ),
