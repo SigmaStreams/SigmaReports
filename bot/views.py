@@ -192,6 +192,39 @@ class TicketResolveView(discord.ui.View):
         await interaction.response.send_modal(modal)
 
 
+class ClaimConfirmationView(discord.ui.View):
+    def __init__(self, actions, report_id: int, staff_user_id: int, report_message):
+        super().__init__(timeout=120)
+        self.actions = actions
+        self.report_id = report_id
+        self.staff_user_id = staff_user_id
+        self.report_message = report_message
+        self.finished = False
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.staff_user_id:
+            await interaction.response.send_message("❌ This confirmation belongs to another staff member.", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="Confirm Claim", style=discord.ButtonStyle.primary)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self.interaction_check(interaction) or self.finished:
+            return
+        self.finished = True
+        self.stop()
+        await self.actions._claim_report(interaction, self.report_id, self.report_message)
+        await interaction.edit_original_response(view=None)
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self.interaction_check(interaction) or self.finished:
+            return
+        self.finished = True
+        self.stop()
+        await interaction.response.edit_message(content="Claim cancelled. No changes were made.", view=None)
+
+
 class ReportActionView(discord.ui.View):
     def __init__(
         self,
@@ -332,13 +365,34 @@ class ReportActionView(discord.ui.View):
         )
         await interaction.response.send_modal(modal)
 
-    @discord.ui.button(label="Claimed", style=discord.ButtonStyle.secondary, custom_id="report:claimed")
+    @discord.ui.button(label="Claim", style=discord.ButtonStyle.secondary, custom_id="report:claimed")
     async def claimed(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self._ensure_staff_channel(interaction):
             return
         if not interaction.message:
             return await interaction.response.send_message("❌ Couldn’t read the report message.", ephemeral=True)
         report = self.db.get_by_staff_message_id(interaction.message.id)
+        if not report:
+            return await interaction.response.send_message("❌ Report not found.", ephemeral=True)
+
+        if report.get("status") != "Open" or report.get("claimed_by_user_id") or report.get("ticket_channel_id"):
+            return await interaction.response.send_message("⚠️ This report is already claimed, closed, or has an open ticket.", ephemeral=True)
+        cfg = getattr(interaction.client, "cfg", None)
+        responses = interaction.guild.get_channel(int(getattr(cfg, "responses_channel_id", 0) or 0))
+        if not isinstance(responses, discord.TextChannel):
+            return await interaction.response.send_message("❌ Responses channel not found. Configure RESPONSES_CHANNEL_ID before claiming reports.", ephemeral=True)
+        await interaction.response.send_message(
+            f"**Claim report #{report['id']}?**\n\n"
+            "You're about to claim this report. This means you've confirmed the issue "
+            "and already filed it. The reporter will be notified.",
+            view=ClaimConfirmationView(self, report["id"], interaction.user.id, interaction.message),
+            ephemeral=True,
+        )
+
+    async def _claim_report(self, interaction: discord.Interaction, report_id: int, report_message):
+        if not await self._ensure_staff_channel(interaction):
+            return
+        report = self.db.get_report_by_id(report_id)
         if not report:
             return await interaction.response.send_message("❌ Report not found.", ephemeral=True)
 
@@ -369,7 +423,7 @@ class ReportActionView(discord.ui.View):
         )
         errors = []
         try:
-            await interaction.message.edit(embed=embed, view=view)
+            await report_message.edit(embed=embed, view=view)
         except discord.HTTPException:
             errors.append("the staff embed could not be updated")
         try:

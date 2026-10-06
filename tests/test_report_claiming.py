@@ -16,6 +16,7 @@ class ReportClaimingTests(unittest.IsolatedAsyncioTestCase):
         self.db.set_staff_message_id(self.rid, 33)
         self.view = ReportActionView(self.db, 22, 0, False, 0)
         self.responses = Mock(spec=discord.TextChannel)
+        self.responses.id = 44
         self.responses.send = AsyncMock()
         self.reporter = SimpleNamespace(id=11, mention='<@11>')
         self.interaction = SimpleNamespace(
@@ -24,12 +25,15 @@ class ReportClaimingTests(unittest.IsolatedAsyncioTestCase):
             user=SimpleNamespace(id=55),
             message=SimpleNamespace(id=33, edit=AsyncMock()),
             client=SimpleNamespace(cfg=SimpleNamespace(responses_channel_id=44), get_user=lambda uid: self.reporter),
-            response=SimpleNamespace(send_message=AsyncMock(), defer=AsyncMock()),
+            response=SimpleNamespace(send_message=AsyncMock(), defer=AsyncMock(), edit_message=AsyncMock()),
             followup=SimpleNamespace(send=AsyncMock()),
+            edit_original_response=AsyncMock(),
         )
 
     async def test_claim_persists_and_notifies_once_without_closing(self):
         await self.view.claimed.callback(self.interaction)
+        confirmation = self.interaction.response.send_message.call_args.kwargs['view']
+        await confirmation.confirm.callback(self.interaction)
         report = self.db.get_report_by_id(self.rid)
         self.assertEqual(report['status'], 'Claimed')
         self.assertEqual(report['claimed_by_user_id'], 55)
@@ -79,6 +83,8 @@ class ReportClaimingTests(unittest.IsolatedAsyncioTestCase):
     async def test_notification_failure_is_reported_to_staff(self):
         self.responses.send.side_effect = discord.Forbidden(SimpleNamespace(status=403, reason='Forbidden'), 'Missing permissions')
         await self.view.claimed.callback(self.interaction)
+        confirmation = self.interaction.response.send_message.call_args.kwargs['view']
+        await confirmation.confirm.callback(self.interaction)
         self.assertIn('notification could not be sent', self.interaction.followup.send.call_args.args[0])
 
     async def test_non_staff_cannot_claim(self):
@@ -86,3 +92,46 @@ class ReportClaimingTests(unittest.IsolatedAsyncioTestCase):
         await self.view.claimed.callback(self.interaction)
         self.assertEqual(self.db.get_report_by_id(self.rid)['status'], 'Open')
         self.responses.send.assert_not_awaited()
+
+    async def test_prompt_and_cancel_have_no_side_effects(self):
+        self.assertEqual(self.view.claimed.label, 'Claim')
+        await self.view.claimed.callback(self.interaction)
+        prompt = self.interaction.response.send_message.call_args
+        self.assertTrue(prompt.kwargs['ephemeral'])
+        self.assertIn("You've confirmed".lower(), prompt.args[0].lower())
+        self.assertIn('The reporter will be notified.', prompt.args[0])
+        self.assertEqual(self.db.get_report_by_id(self.rid)['status'], 'Open')
+        self.responses.send.assert_not_awaited()
+        self.interaction.message.edit.assert_not_awaited()
+        confirmation = prompt.kwargs['view']
+        await confirmation.cancel.callback(self.interaction)
+        await confirmation.confirm.callback(self.interaction)
+        self.assertEqual(self.db.get_report_by_id(self.rid)['status'], 'Open')
+        self.responses.send.assert_not_awaited()
+
+    async def test_confirmation_rechecks_report_state(self):
+        await self.view.claimed.callback(self.interaction)
+        confirmation = self.interaction.response.send_message.call_args.kwargs['view']
+        self.db.claim_report(self.rid, 66)
+        await confirmation.confirm.callback(self.interaction)
+        self.assertEqual(self.db.get_report_by_id(self.rid)['claimed_by_user_id'], 66)
+        self.responses.send.assert_not_awaited()
+
+    async def test_confirmation_rechecks_staff_access(self):
+        await self.view.claimed.callback(self.interaction)
+        confirmation = self.interaction.response.send_message.call_args.kwargs['view']
+        self.view.staff_role_id = 99
+        await confirmation.confirm.callback(self.interaction)
+        self.assertEqual(self.db.get_report_by_id(self.rid)['status'], 'Open')
+        self.responses.send.assert_not_awaited()
+
+    async def test_confirmation_is_personal_and_only_runs_once(self):
+        await self.view.claimed.callback(self.interaction)
+        confirmation = self.interaction.response.send_message.call_args.kwargs['view']
+        self.interaction.user.id = 66
+        await confirmation.confirm.callback(self.interaction)
+        self.assertEqual(self.db.get_report_by_id(self.rid)['status'], 'Open')
+        self.interaction.user.id = 55
+        await confirmation.confirm.callback(self.interaction)
+        await confirmation.confirm.callback(self.interaction)
+        self.responses.send.assert_awaited_once()
