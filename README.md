@@ -213,14 +213,14 @@ An optional web interface runs inside the existing SigmaReports bot process. It 
 
 The **Reports** page provides:
 
-- Search by TV channel, VOD title, issue, cached reporter username/ID, or report ID.
+- Search by TV channel, VOD title, issue, Discord reporter username/display name/ID, or report ID.
 - Filters for active/all/exact status, TV/VOD, provider, and assignment, with pagination.
-- Full saved report details, provider/device/library/episode fields, claimant, closure details, and Discord staff-message/ticket links.
+- Full saved report details, provider/device/library/episode fields, reporter/staff Discord names and avatars, closure details, and Discord staff-message/ticket links. Missing cached reporters are fetched from Discord with a bounded five-minute identity cache; unavailable accounts retain their ID and an avatar initial fallback.
 - Reviewed Claim, Open ticket, Resolved, Not resolved, Reopen, Resend missing staff report, and Change reporter actions. Changing the reporter while a ticket exists is blocked to keep private-channel access consistent.
 
-The **Administration** page provides report-system blocks/unblocks, report-panel posting, liveboard start/refresh/stop, bulk active-report closure, and a read-only routing summary. Staff ping toggles and command synchronization remain restricted to the existing owner ID; they also require dashboard staff access. Provider registries, playlists, refresh credentials, environment edits, and arbitrary code execution are not browser controls.
+The web interface is limited to individual report workflows. Bot administration continues through the existing Discord commands.
 
-Changes require a session-bound review that expires after five minutes and an explicit `yes`. Confirmation rechecks access and reviewed state. Repeated confirmations return the same running/completed result. A failure with uncertain delivery is recorded without automatically retrying. Ticket closures run in the background, retaining the existing configured cancellation grace period, reporter updates, and transcript/cleanup behavior. Sending a message in the ticket or clicking its Cancel button keeps the ticket and report open. Bulk closure applies individual closures to only the reviewed reports; changed/cancelled reports stay open. Staff access is checked again at the end of the grace period. Restarting the bot interrupts pending closures and leaves their reports open. Signing out invalidates pending reviews and prevents a waiting closure from finalizing through that session.
+Changes require a session-bound review that expires after five minutes and an explicit `yes`. Confirmation rechecks access and reviewed state. Repeated confirmations return the same running/completed result. A failure with uncertain delivery is recorded without automatically retrying. Ticket closures run in the background, retaining the existing configured cancellation grace period, reporter updates, and transcript/cleanup behavior. Sending a message in the ticket or clicking its Cancel button keeps the ticket and report open. Staff access is checked again at the end of the grace period. Restarting the bot interrupts pending closures and leaves their reports open. Signing out invalidates pending reviews and prevents a waiting closure from finalizing through that session.
 
 Closure details and the staff actor are now saved in SQLite for both Resolved and Not Resolved, including closures from Discord. Existing database rows migrate automatically by adding the nullable `resolved_note` column; older notes that appeared only in Discord messages cannot be recovered from this migration. Back up the existing persistent `data/` directory before deployment.
 

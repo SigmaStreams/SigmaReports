@@ -16,7 +16,7 @@ from aiohttp import web
 import discord
 
 from .web_actions import ReportActions, snowflake, CLOSED
-from .cogs.reports import OWNER_ID
+from .web_users import UserIdentities
 from .utils import report_subject
 
 ASSETS = Path(__file__).parent / "web"
@@ -67,6 +67,7 @@ class Dashboard:
         self.bot = bot
         self.config = config
         self.actions = ReportActions(bot)
+        self.users = UserIdentities(bot)
         self.sessions = {}
         self.states = {}
         self.reviews = {}
@@ -84,7 +85,6 @@ class Dashboard:
         self.app.router.add_get("/api/bootstrap", self.bootstrap)
         self.app.router.add_get("/api/reports", self.inventory)
         self.app.router.add_get("/api/report", self.report)
-        self.app.router.add_get("/api/admin", self.admin)
         self.app.router.add_get("/api/review", self.review_status)
         self.app.router.add_post("/api/preview", self.preview)
         self.app.router.add_post("/api/confirm", self.confirm)
@@ -145,7 +145,7 @@ class Dashboard:
         response.headers.update({"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
                                  "Referrer-Policy": "no-referrer", "X-Frame-Options": "DENY",
                                  "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; "
-                                 "img-src 'self' https:; "
+                                 "img-src 'self' https://cdn.discordapp.com; "
                                  "connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"})
         return response
 
@@ -290,20 +290,15 @@ class Dashboard:
             raise ValueError("Choose a valid page.")
         return {"items": rows[(page - 1) * 50:page * 50], "total": len(rows), "page": page, "pages": max(1, (len(rows) + 49) // 50)}
 
-    def user_data(self, guild, uid):
-        if not uid:
-            return None
-        user = guild.get_member(int(uid)) or self.bot.get_user(int(uid))
-        return {"id": str(uid), "username": user.name if user else "Unknown user"}
-
-    def report_data(self, guild, report):
+    async def report_data(self, guild, report):
         row = dict(report)
         for key in ("id", "guild_id", "reporter_id", "source_channel_id", "staff_message_id", "ticket_channel_id", "claimed_by_user_id", "resolved_by"):
             row[key] = str(row[key]) if row.get(key) else None
         row["subject"] = report_subject(report["report_type"], report["payload"])
-        row["reporter"] = self.user_data(guild, report["reporter_id"])
-        row["claimant"] = self.user_data(guild, report.get("claimed_by_user_id"))
-        row["resolver"] = self.user_data(guild, report.get("resolved_by"))
+        row["reporter"], row["claimant"], row["resolver"] = await asyncio.gather(
+            self.users.get(guild, report["reporter_id"]),
+            self.users.get(guild, report.get("claimed_by_user_id")),
+            self.users.get(guild, report.get("resolved_by")))
         row["closing"] = self.actions.pending(guild, report["id"])
         row["staff_url"] = f"https://discord.com/channels/{guild.id}/{self.bot.cfg.staff_channel_id}/{report['staff_message_id']}" if report.get("staff_message_id") else None
         row["ticket_url"] = f"https://discord.com/channels/{guild.id}/{report['ticket_channel_id']}" if report.get("ticket_channel_id") else None
@@ -312,7 +307,6 @@ class Dashboard:
     async def inventory(self, request):
         _, guild, actor = await self.staff(request)
         rows = self.bot.db.list_active_reports(guild.id)
-        rows = [self.report_data(guild, r) for r in rows]
         counts = {"active": sum(r["status"] not in CLOSED for r in rows), "claimed": sum(r["status"] == "Claimed" for r in rows), "tickets": sum(bool(r["ticket_channel_id"]) for r in rows), "closed": sum(r["status"] in CLOSED for r in rows)}
         status = request.query.get("status", "active")
         kind = request.query.get("type", "")
@@ -328,41 +322,25 @@ class Dashboard:
                 continue
             if kind and row["report_type"] != kind:
                 continue
-            if assigned == "mine" and row["claimed_by_user_id"] != str(actor.id) or assigned == "unassigned" and row["claimed_by_user_id"]:
+            if assigned == "mine" and row.get("claimed_by_user_id") != actor.id or assigned == "unassigned" and row.get("claimed_by_user_id"):
                 continue
             if provider and str(row["payload"].get("provider_name") or row["payload"].get("provider_id") or "") != provider:
                 continue
-            if query and query not in " ".join((row["id"], row["subject"], row["reporter"]["username"], row["reporter_id"], json.dumps(row["payload"], ensure_ascii=False))).casefold():
-                continue
             result.append(row)
-        return web.json_response({**self.page(request, result), "counts": counts, "providers": providers})
+        if query:
+            ids = {r["reporter_id"] for r in result}
+            identities = dict(zip(ids, await asyncio.gather(*(self.users.get(guild, uid) for uid in ids))))
+            result = [r for r in result if query in " ".join((
+                str(r["id"]), report_subject(r["report_type"], r["payload"]),
+                identities[r["reporter_id"]]["username"], identities[r["reporter_id"]]["display_name"],
+                str(r["reporter_id"]), json.dumps(r["payload"], ensure_ascii=False))).casefold()]
+        page = self.page(request, result)
+        page["items"] = await asyncio.gather(*(self.report_data(guild, r) for r in page["items"]))
+        return web.json_response({**page, "counts": counts, "providers": providers})
 
     async def report(self, request):
         _, guild, _ = await self.staff(request)
-        return web.json_response(self.report_data(guild, self.actions.get_report(guild, request.query.get("report_id"))))
-
-    async def admin(self, request):
-        _, guild, actor = await self.staff(request)
-        channels = []
-        for channel in guild.text_channels:
-            try:
-                self.actions.destination(guild, actor, channel.id)
-                channels.append({"id": str(channel.id), "name": "#" + channel.name})
-            except ValueError:
-                pass
-        blocks = self.bot.db.list_blocked_users(guild.id)
-        for block in blocks:
-            block["user"] = self.user_data(guild, block["user_id"])
-            for key in ("user_id", "guild_id", "blocked_by"):
-                block[key] = str(block[key]) if block.get(key) else None
-        def channel_label(cid):
-            ch = guild.get_channel(cid)
-            return f"{cid} (#{ch.name})" if ch else f"{cid} (name unavailable)"
-        cfg = self.bot.cfg
-        board = self.bot.db.get_liveboard(guild.id)
-        if board:
-            board = {k: str(v) for k, v in board.items()}
-        return web.json_response({"channels": channels, "blocks": blocks, "owner": actor.id == OWNER_ID, "pings": self.bot.db.get_report_pings_enabled(), "liveboard": board, "settings": {"Staff reports": channel_label(cfg.staff_channel_id), "Responses": channel_label(cfg.responses_channel_id), "Transcripts": channel_label(cfg.transcripts_channel_id), "Public updates": cfg.public_updates, "Ticket closure grace period": f"{cfg.ticket_close_delay_minutes} minutes"}})
+        return web.json_response(await self.report_data(guild, self.actions.get_report(guild, request.query.get("report_id"))))
 
     async def preview(self, request):
         data = await self.json(request)
@@ -407,7 +385,7 @@ class Dashboard:
             log.error("SigmaReports action could not be confirmed; check report and delivery state.")
             outcome = {"error": "The action could not be confirmed. Check report, ticket, and delivery state before a new review."}
         else:
-            log.info("SigmaReports web action completed: actor=%s guild=%s action=%s report=%s", actor.id, guild.id, review["data"]["action"], review["data"].get("report_id", "bulk/admin"))
+            log.info("SigmaReports web action completed: actor=%s guild=%s action=%s report=%s", actor.id, guild.id, review["data"]["action"], review["data"]["report_id"])
         review.update(state="done", outcome=outcome)
         # Keep completed feedback pollable during the remaining session.
         session = self.sessions.get(review["session_id"])
@@ -448,6 +426,7 @@ class Dashboard:
             raise
 
     async def close(self):
+        await self.users.close()
         for task in self.tasks:
             task.cancel()
         if self.tasks:

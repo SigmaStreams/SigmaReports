@@ -11,8 +11,7 @@ from aiohttp import web
 from aiohttp.test_utils import make_mocked_request
 
 from bot.closure import TicketClosureManager
-from bot.cogs.moderation import Moderation
-from bot.cogs.reports import Reports, OWNER_ID
+from bot.cogs.reports import Reports
 from bot.db import ReportDB
 from bot.web_actions import ReportActions, WebReportContext, report_revision, snowflake
 from bot.web_dashboard import Dashboard, DashboardConfig, COOKIE, STATE_COOKIE, start_dashboard
@@ -43,7 +42,7 @@ class BaseDashboardCase(unittest.IsolatedAsyncioTestCase):
         self.cfg = SimpleNamespace(staff_role_id=99, staff_channel_id=22, support_channel_id=0, tickets_category_id=0, public_updates=False, responses_channel_id=44, transcripts_channel_id=0, ticket_close_delay_minutes=10)
         self.bot = SimpleNamespace(db=self.db, cfg=self.cfg, guilds=[self.guild], get_guild=lambda gid: self.guild if gid==1 else None, get_user=lambda uid:self.reporter, fetch_user=AsyncMock(return_value=self.reporter), is_ready=lambda:True, user=SimpleNamespace(id=100), application_id=123)
         self.bot.ticket_closures = TicketClosureManager(self.bot, delay=.01)
-        self.cogs = {'Reports':Reports(self.bot,self.db,self.cfg), 'Moderation':Moderation(self.bot,self.db,self.cfg)}
+        self.cogs = {'Reports':Reports(self.bot,self.db,self.cfg)}
         self.bot.get_cog=lambda name:self.cogs.get(name)
         self.dashboard = Dashboard(self.bot,DashboardConfig('http://127.0.0.1:8767','123','test-secret'))
         self.sid='test-session'
@@ -71,6 +70,98 @@ class BaseDashboardCase(unittest.IsolatedAsyncioTestCase):
 
 
 class DashboardTests(BaseDashboardCase):
+    def uncached_reporter(self):
+        self.guild.get_member = lambda uid: self.actor if uid == 55 else None
+        self.bot.get_user = lambda uid: None
+        self.bot.fetch_user.return_value = discord.User(state=Mock(), data={
+            'id': '11', 'username': 'reporter.account', 'global_name': 'Reporter Name',
+            'discriminator': '0', 'avatar': 'abc123'})
+
+    async def test_uncached_reporter_name_avatar_and_search(self):
+        self.uncached_reporter()
+        response = await self.guarded(self.dashboard.report, f'/api/report?guild_id=1&report_id={self.rid}')
+        user = body(response)['reporter']
+        self.assertEqual(user['username'], 'reporter.account')
+        self.assertEqual(user['display_name'], 'Reporter Name')
+        self.assertEqual(user['avatar_url'], 'https://cdn.discordapp.com/avatars/11/abc123.png?size=64')
+        for query in ('reporter.account', 'Reporter%20Name'):
+            response = await self.guarded(self.dashboard.inventory, '/api/reports?guild_id=1&q=' + query)
+            self.assertEqual(body(response)['total'], 1)
+        self.bot.fetch_user.assert_awaited_once_with(11)
+
+    async def test_lookup_shared_by_reports_and_concurrent_reads(self):
+        self.uncached_reporter()
+        self.db.create_report('VOD', 11, 1, 22, {'title': 'Film'})
+        responses = await asyncio.gather(*(self.guarded(self.dashboard.inventory) for _ in range(3)))
+        for response in responses:
+            self.assertEqual(response.status, 200)
+            self.assertEqual(body(response)['total'], 2)
+        self.bot.fetch_user.assert_awaited_once_with(11)
+
+    async def test_unavailable_identity_does_not_hide_report_and_retries_after_expiry(self):
+        self.uncached_reporter()
+        self.bot.fetch_user.side_effect = discord.NotFound(Mock(status=404), 'Unknown User')
+        response = await self.guarded(self.dashboard.report, f'/api/report?guild_id=1&report_id={self.rid}')
+        user = body(response)['reporter']
+        self.assertEqual(response.status, 200)
+        self.assertEqual(user, {'id': '11', 'username': 'User unavailable', 'display_name': 'User unavailable', 'avatar_url': None})
+        await self.dashboard.users.get(self.guild, 11)
+        self.bot.fetch_user.assert_awaited_once()
+        self.dashboard.users.cache[(1, 11)] = (0, user)
+        self.bot.fetch_user.side_effect = None
+        self.assertEqual((await self.dashboard.users.get(self.guild, 11))['username'], 'reporter.account')
+        self.assertEqual(self.bot.fetch_user.await_count, 2)
+
+    async def test_cached_staff_avatars_and_default_reporter_avatar(self):
+        self.uncached_reporter()
+        self.bot.fetch_user.return_value = discord.User(state=Mock(), data={
+            'id': '11', 'username': 'reporter.account', 'global_name': None,
+            'discriminator': '0', 'avatar': None})
+        self.actor.display_name = 'Staff Name'
+        self.actor.display_avatar.with_size.return_value.url = 'https://cdn.discordapp.com/embed/avatars/2.png'
+        self.db.claim_report(self.rid, 55)
+        self.db.mark_closed(self.rid, 'Resolved', 55, 'Done')
+        response = await self.guarded(self.dashboard.report, f'/api/report?guild_id=1&report_id={self.rid}')
+        result = body(response)
+        self.assertIn('/embed/avatars/', result['reporter']['avatar_url'])
+        for field in ('claimant', 'resolver'):
+            self.assertEqual(result[field]['display_name'], 'Staff Name')
+            self.assertEqual(result[field]['avatar_url'], 'https://cdn.discordapp.com/embed/avatars/2.png')
+        self.bot.fetch_user.assert_awaited_once_with(11)
+
+    async def test_unauthorized_reads_do_not_fetch_identities(self):
+        self.uncached_reporter()
+        self.actor.roles = []
+        response = await self.guarded(self.dashboard.inventory)
+        self.assertEqual(response.status, 403)
+        self.bot.fetch_user.assert_not_awaited()
+
+    async def test_queue_fetches_only_visible_page_and_valid_filters(self):
+        self.uncached_reporter()
+        async def fetch_user(uid):
+            return discord.User(state=Mock(), data={'id': str(uid), 'username': f'user{uid}',
+                'discriminator': '0', 'avatar': None})
+        self.bot.fetch_user.side_effect = fetch_user
+        for index in range(60):
+            self.db.create_report('TV', 1000 + index, 1, 22, {'channel_name': 'News'})
+        response = await self.guarded(self.dashboard.inventory, '/api/reports?guild_id=1&status=invalid')
+        self.assertEqual(response.status, 400)
+        self.bot.fetch_user.assert_not_awaited()
+        response = await self.guarded(self.dashboard.inventory)
+        result = body(response)
+        self.assertEqual(result['total'], 61)
+        self.assertEqual(len(result['items']), 50)
+        self.assertEqual(self.bot.fetch_user.await_count, 50)
+        fetched_ids = {call.args[0] for call in self.bot.fetch_user.await_args_list}
+        self.assertEqual(fetched_ids, {int(r['reporter_id']) for r in result['items']})
+
+    async def test_admin_actions_are_no_longer_available(self):
+        for action in ('block', 'unblock', 'panel', 'liveboard_start', 'liveboard_refresh', 'liveboard_stop', 'bulk_close', 'pings', 'sync'):
+            response = await self.guarded(self.dashboard.preview, data={'action': action, 'guild_id': '1'})
+            self.assertEqual(response.status, 400)
+        self.assertFalse(self.dashboard.reviews)
+        self.channel.send.assert_not_awaited()
+
     async def test_anonymous_inventory_is_protected(self):
         response=await self.guarded(self.dashboard.inventory,session=False)
         self.assertEqual(response.status,401)
@@ -222,23 +313,6 @@ class DashboardTests(BaseDashboardCase):
         self.assertEqual(self.db.get_by_id(self.rid)['status'],'Open')
         self.channel.delete.assert_not_awaited()
 
-    async def test_block_unblock_use_database_contract_and_modlog(self):
-        data,_=await self.prepared('block',user_id='11',duration_minutes='10',note='Spam')
-        await self.dashboard.actions.execute(self.guild,self.actor,data,self.authorize)
-        self.assertTrue(self.db.is_user_blocked(1,11)[0])
-        self.assertEqual(self.db.list_blocked_users(1)[0]['blocked_by'],55)
-        data,_=await self.prepared('unblock',user_id='11')
-        await self.dashboard.actions.execute(self.guild,self.actor,data,self.authorize)
-        self.assertFalse(self.db.is_user_blocked(1,11)[0])
-
-    async def test_owner_tools_are_restricted(self):
-        for action in ('pings','sync'):
-            with self.assertRaises(web.HTTPForbidden): await self.prepared(action)
-        self.actor.id=OWNER_ID
-        data,_=await self.prepared('pings')
-        await self.dashboard.actions.execute(self.guild,self.actor,data,self.authorize)
-        self.assertFalse(self.db.get_report_pings_enabled())
-
     async def test_reassign_ticket_and_invalid_actions_are_rejected(self):
         for action,extra in [('not_resolved',{}),('block',{'user_id':'11','duration_minutes':'-1'}),('invalid',{})]:
             with self.assertRaises(ValueError): await self.prepared(action,**extra)
@@ -304,47 +378,6 @@ class ActionIntegrationTests(BaseDashboardCase):
         await self.dashboard.actions.execute(self.guild,self.actor,data,self.authorize)
         self.assertEqual(self.db.get_by_id(self.rid)['reporter_id'],66)
 
-    async def test_panel_preview_matches_posted_embed(self):
-        from bot.cogs.panel import ReportPanelCog
-        self.cogs['ReportPanelCog']=ReportPanelCog(self.bot,self.db,self.cfg)
-        data,preview=await self.prepared('panel',channel_id='22')
-        await self.dashboard.actions.execute(self.guild,self.actor,data,self.authorize)
-        self.assertEqual(preview['embed'],self.channel.send.call_args.kwargs['embed'].to_dict())
-
-    async def test_liveboard_start_refresh_stop_and_stale_review(self):
-        from bot.cogs.liveboard import LiveboardCog
-        cog=LiveboardCog.__new__(LiveboardCog)
-        cog.bot,cog.db,cog.cfg=self.bot,self.db,self.cfg
-        cog.update_liveboard=AsyncMock()
-        self.cogs['LiveboardCog']=cog
-        self.channel.send.return_value=SimpleNamespace(id=88)
-        data,preview=await self.prepared('liveboard_start',channel_id='22')
-        await self.dashboard.actions.execute(self.guild,self.actor,data,self.authorize)
-        self.assertEqual(self.db.get_liveboard(1)['message_id'],88)
-        for action in ('liveboard_refresh','liveboard_stop'):
-            data,_=await self.prepared(action)
-            await self.dashboard.actions.execute(self.guild,self.actor,data,self.authorize)
-        cog.update_liveboard.assert_awaited_once_with(1)
-        self.assertIsNone(self.db.get_liveboard(1))
-
-    async def test_liveboard_confirmation_accepts_elapsed_time(self):
-        from datetime import datetime, timezone, timedelta
-        from bot.cogs.liveboard import LiveboardCog
-        cog=LiveboardCog.__new__(LiveboardCog)
-        cog.bot,cog.db,cog.cfg=self.bot,self.db,self.cfg
-        self.cogs['LiveboardCog']=cog
-        self.channel.send.return_value=SimpleNamespace(id=88)
-        now=datetime.now(timezone.utc)
-        with patch('bot.cogs.liveboard._utcnow',return_value=now):
-            response=await self.guarded(self.dashboard.preview,data={'action':'liveboard_start','guild_id':'1','channel_id':'22'})
-        rid=body(response)['review_id']
-        with patch('bot.cogs.liveboard._utcnow',return_value=now+timedelta(seconds=20)):
-            response=await self.guarded(self.dashboard.confirm,data={'review_id':rid,'confirmation':'yes'})
-            self.assertEqual(response.status,202)
-            await asyncio.gather(*self.dashboard.tasks)
-        self.channel.send.assert_awaited_once()
-        self.assertEqual(self.db.get_liveboard(1)['message_id'],88)
-
     async def test_resend_review_includes_notifications_and_rejects_ping_drift(self):
         rid=self.db.create_report('TV',11,1,22,{'channel_name':'News','issue':'No sound'})
         self.cfg.tv_staff_ping_user_ids=[55]
@@ -357,24 +390,8 @@ class ActionIntegrationTests(BaseDashboardCase):
         self.assertEqual(response.status,409)
         self.channel.send.assert_not_awaited()
 
-    async def test_bulk_close_uses_grace_period_and_leaves_cancelled_ticket_open(self):
-        ticket_rid=self.db.create_report('TV',11,1,22,{'channel_name':'Sports','issue':'Buffering'})
-        self.db.set_ticket_channel_id(ticket_rid,77)
-        data,preview=await self.prepared('bulk_close')
-        self.assertEqual(len(preview['reports']),2)
-        self.bot.ticket_closures.delay=100
-        task=asyncio.create_task(self.dashboard.actions.execute(self.guild,self.actor,data,self.authorize))
-        while not self.bot.ticket_closures.pending: await asyncio.sleep(0)
-        new_rid=self.db.create_report('TV',11,1,22,{'channel_name':'New report'})
-        await self.bot.ticket_closures.on_message(SimpleNamespace(author=SimpleNamespace(id=11),channel=SimpleNamespace(id=77)))
-        result=await task
-        self.assertEqual(self.db.get_by_id(self.rid)['status'],'Resolved')
-        self.assertEqual(self.db.get_by_id(ticket_rid)['status'],'Open')
-        self.assertEqual(self.db.get_by_id(new_rid)['status'],'Open')
-        self.assertEqual(len(result['reports']),2)
-
     async def test_permission_removed_after_preview_and_role_removed_before_confirm(self):
-        data,_=await self.prepared('panel',channel_id='22')
+        data,_=await self.prepared('claim')
         self.channel.permissions_for.return_value.send_messages=False
         with self.assertRaises(ValueError):await self.dashboard.actions.execute(self.guild,self.actor,data,self.authorize)
         self.channel.send.assert_not_awaited()
@@ -417,6 +434,8 @@ class HttpTests(BaseDashboardCase):
         self.addAsyncCleanup(self.client.close)
 
     async def test_http_assets_signin_and_anonymous_api(self):
+        response=await self.client.get('/api/admin?guild_id=1',headers={'Cookie':f'{COOKIE}={self.sid}'})
+        self.assertEqual(response.status,404)
         response=await self.client.get('/')
         self.assertIn('Sign in with Discord',await response.text())
         response=await self.client.get('/assets/dashboard.js')
