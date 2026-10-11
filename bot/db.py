@@ -121,6 +121,7 @@ class ReportDB:
         self._ensure_column("reports", "claimed_at", "TEXT")
         self._ensure_column("reports", "resolved_by", "INTEGER")
         self._ensure_column("reports", "resolved_at", "TEXT")
+        self._ensure_column("reports", "resolved_note", "TEXT")
 
         # Default setting values
         if self._get_setting("report_pings_enabled") is None:
@@ -235,6 +236,16 @@ class ReportDB:
         )
         self.conn.commit()
 
+    def mark_closed(self, report_id: int, status: str, staff_user_id: int, note: str = "") -> None:
+        if status not in {"Resolved", "Not Resolved"}:
+            raise ValueError("Choose a closed report status.")
+        now = _utcnow_iso()
+        self.conn.execute(
+            "UPDATE reports SET status=?, resolved_by=?, resolved_at=?, resolved_note=?, updated_at=? WHERE id=?",
+            (status, int(staff_user_id), now, note, now, int(report_id)),
+        )
+        self.conn.commit()
+
     # ✅ NEW: edit reporter
     def update_reporter_id(self, report_id: int, new_reporter_id: int) -> bool:
         cur = self.conn.cursor()
@@ -313,6 +324,7 @@ class ReportDB:
         if "resolved_at" in row.keys():
             out["resolved_at"] = row["resolved_at"]
 
+        out["resolved_note"] = row["resolved_note"]
         return out
 
     # Used by liveboard cog

@@ -1,0 +1,7 @@
+# Optional dashboard port, exposed only on the Docker host's loopback interface.
+services:
+  reports-bot:
+    environment:
+      WEB_DASHBOARD_HOST: 0.0.0.0
+    ports:
+      - "127.0.0.1:${WEB_DASHBOARD_PORT:-8767}:${WEB_DASHBOARD_PORT:-8767}"

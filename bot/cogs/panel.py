@@ -1128,6 +1128,20 @@ class ReportPanelView(discord.ui.View):
         await start_vod_title_flow(interaction, self.db, self.cfg)
 
 
+def build_report_panel_embed():
+    embed = discord.Embed(
+        title="Submit a report",
+        description=(
+            "Choose a report type below.\n\n"
+            "📺 **IPTV** — buffering, offline channels, wrong content\n"
+            "🎬 **VOD** — playback issues, missing episodes, quality problems"
+        ),
+    )
+    embed.set_footer(text="Include as much detail as you can.")
+
+    return embed
+
+
 class ReportPanelCog(commands.Cog):
     def __init__(self, bot, db, cfg):
         self.bot = bot
@@ -1151,15 +1165,7 @@ class ReportPanelCog(commands.Cog):
         if not self._is_staff(interaction):
             return await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
 
-        embed = discord.Embed(
-            title="Submit a report",
-            description=(
-                "Choose a report type below.\n\n"
-                "📺 **IPTV** — buffering, offline channels, wrong content\n"
-                "🎬 **VOD** — playback issues, missing episodes, quality problems"
-            ),
-        )
-        embed.set_footer(text="Include as much detail as you can.")
+        embed = build_report_panel_embed()
 
         view = ReportPanelView(self.db, self.cfg)
 

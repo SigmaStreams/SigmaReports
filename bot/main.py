@@ -16,6 +16,7 @@ from discord.ext import commands
 from bot.config import load_config
 from bot.db import ReportDB
 from bot.closure import TicketClosureManager
+from bot.web_dashboard import start_dashboard
 from bot.views import ReportActionView, TicketResolveView
 
 try:
@@ -116,7 +117,16 @@ class SigmaReportsBot(commands.Bot):
         else:
             print("⚠️  No guild_id configured; skipping guild sync.")
 
+        await start_dashboard(self)
         self._presence_task = asyncio.create_task(self._presence_rotator())
+
+    async def close(self):
+        dashboard = getattr(self, "web_dashboard", None)
+        if dashboard:
+            await dashboard.close()
+        if self._presence_task:
+            self._presence_task.cancel()
+        await super().close()
 
     async def on_ready(self):
         print(f"Logged in as {self.user} (ID: {self.user.id})")

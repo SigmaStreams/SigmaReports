@@ -86,7 +86,8 @@ class Moderation(commands.Cog):
         self.db.block_user(
             guild_id=interaction.guild.id,
             user_id=user.id,
-            created_by=interaction.user.id,
+            blocked_by=interaction.user.id,
+            permanent=duration_minutes is None,
             duration_minutes=duration_minutes,
             reason=(reason or "").strip(),
         )
@@ -147,7 +148,7 @@ class Moderation(commands.Cog):
         if not self._is_staff(interaction):
             return await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
 
-        blocks = self.db.list_blocks(interaction.guild.id)
+        blocks = self.db.list_blocked_users(interaction.guild.id)
         if not blocks:
             return await interaction.response.send_message("No blocked users right now.", ephemeral=True)
 

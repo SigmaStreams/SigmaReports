@@ -23,6 +23,7 @@ Docker is the recommended setup because it avoids local Python version drift, us
 - [Create a local venv](#create-a-local-venv)
 - [Configuration](#configuration)
 - [Running The Bot](#running-the-bot)
+- [Staff Web Dashboard](#staff-web-dashboard)
 - [IPTV Datasets](#iptv-datasets)
 - [Legacy Compatibility](#legacy-compatibility)
 - [Single-Provider Migration](#single-provider-migration)
@@ -204,6 +205,65 @@ Use this only if you intentionally want to run outside Docker.
 ```bash
 ./.venv/bin/pip install -r requirements.txt
 ./.venv/bin/python -m bot.main
+```
+
+## Staff Web Dashboard
+
+An optional web interface runs inside the existing SigmaReports bot process. It uses Discord sign-in and the configured `STAFF_ROLE_ID`, and requires the staff member to be able to view the configured staff reports channel. Every API read and action checks current membership/access. No second Discord bot process is needed.
+
+The **Reports** page provides:
+
+- Search by TV channel, VOD title, issue, cached reporter username/ID, or report ID.
+- Filters for active/all/exact status, TV/VOD, provider, and assignment, with pagination.
+- Full saved report details, provider/device/library/episode fields, claimant, closure details, and Discord staff-message/ticket links.
+- Reviewed Claim, Open ticket, Resolved, Not resolved, Reopen, Resend missing staff report, and Change reporter actions. Changing the reporter while a ticket exists is blocked to keep private-channel access consistent.
+
+The **Administration** page provides report-system blocks/unblocks, report-panel posting, liveboard start/refresh/stop, bulk active-report closure, and a read-only routing summary. Staff ping toggles and command synchronization remain restricted to the existing owner ID; they also require dashboard staff access. Provider registries, playlists, refresh credentials, environment edits, and arbitrary code execution are not browser controls.
+
+Changes require a session-bound review that expires after five minutes and an explicit `yes`. Confirmation rechecks access and reviewed state. Repeated confirmations return the same running/completed result. A failure with uncertain delivery is recorded without automatically retrying. Ticket closures run in the background, retaining the existing configured cancellation grace period, reporter updates, and transcript/cleanup behavior. Sending a message in the ticket or clicking its Cancel button keeps the ticket and report open. Bulk closure applies individual closures to only the reviewed reports; changed/cancelled reports stay open. Staff access is checked again at the end of the grace period. Restarting the bot interrupts pending closures and leaves their reports open. Signing out invalidates pending reviews and prevents a waiting closure from finalizing through that session.
+
+Closure details and the staff actor are now saved in SQLite for both Resolved and Not Resolved, including closures from Discord. Existing database rows migrate automatically by adding the nullable `resolved_note` column; older notes that appeared only in Discord messages cannot be recovered from this migration. Back up the existing persistent `data/` directory before deployment.
+
+### Configure sign-in
+
+The interface is disabled unless `WEB_DASHBOARD_ENABLED=true`. Configure these private deployment settings in `.env`:
+
+```dotenv
+WEB_DASHBOARD_ENABLED=true
+WEB_DASHBOARD_HOST=127.0.0.1
+WEB_DASHBOARD_PORT=8767
+WEB_DASHBOARD_URL=https://reports.example.com
+WEB_DASHBOARD_CLIENT_ID=
+WEB_DASHBOARD_CLIENT_SECRET=
+```
+
+`WEB_DASHBOARD_CLIENT_ID` defaults to the bot application ID when blank. Set the secret to this application's OAuth client secret, not its bot token. In the [Discord Developer Portal](https://discord.com/developers/applications), register the exact redirect URL `WEB_DASHBOARD_URL/auth/callback`, for example `https://reports.example.com/auth/callback`. Sign-in uses the `identify` scope and the authorization-code flow described in [Discord's OAuth documentation](https://docs.discord.com/developers/topics/oauth2).
+
+`WEB_DASHBOARD_URL` must be an origin with no path, query, or fragment. Public origins require HTTPS. HTTP is accepted only for loopback hosts, such as `http://127.0.0.1:8767`, for local use or an SSH tunnel. OAuth secrets, access tokens, and the bot token remain server-side; access tokens are not stored in the browser or sessions. Sessions expire after four hours and are lost on restart. Host checks, same-origin JSON/CSRF protection, and HttpOnly session cookies are enabled. Place any public deployment behind an HTTPS reverse proxy that forwards the configured Host header; do not expose the raw Docker port publicly.
+
+For Docker, the optional override publishes only a loopback port while binding the service inside the container:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.web.yml up -d --build
+```
+
+This uses the existing `data/` mount and bot token. Deployment and production workflow checks are separate from local implementation/testing. Configure OAuth and the HTTPS proxy before enabling the production interface.
+
+### Fictional local preview and tests
+
+To inspect the interface without a Discord login, production token, or live database:
+
+```bash
+./.venv/bin/python scripts/preview_dashboard.py
+```
+
+Open `http://127.0.0.1:18867`. All data is fictional and in memory; previews can be reviewed, but confirmation and Discord sign-in are disabled. The preview binds only to loopback, and must never be used as the deployed dashboard.
+
+Run the Python suite with the repository's Python 3.12 dependencies installed:
+
+```bash
+./.venv/bin/python -m unittest discover -s tests
+node --check bot/web/dashboard.js
 ```
 
 ## IPTV Datasets

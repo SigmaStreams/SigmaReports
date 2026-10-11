@@ -2077,7 +2077,7 @@ class ResolveReportModal(discord.ui.Modal):
             interaction, self.db, self.report_id, self._finalize
         )
 
-    async def _finalize(self, interaction: discord.Interaction):
+    async def _finalize(self, interaction: discord.Interaction, *, note: str | None = None):
         if not interaction.guild:
             return await interaction.followup.send("❌ This can only be used in a server.", ephemeral=True)
 
@@ -2086,7 +2086,7 @@ class ResolveReportModal(discord.ui.Modal):
             return await interaction.followup.send("❌ Report not found.", ephemeral=True)
 
         resolver_id = int(interaction.user.id)
-        note = str(self.details).strip()
+        note = str(self.details).strip() if note is None else note.strip()
 
         # Pre-fetch reporter for transcripts + DMs
         reporter_u: discord.abc.User | None = None
@@ -2098,13 +2098,7 @@ class ResolveReportModal(discord.ui.Modal):
         if self.close_ticket_channel:
             await self._close_ticket_channel_if_any(interaction, reporter_u)
 
-        if hasattr(self.db, "mark_resolved"):
-            try:
-                self.db.mark_resolved(self.report_id, resolver_id)  # type: ignore[attr-defined]
-            except Exception:
-                self.db.update_status(self.report_id, "Resolved")
-        else:
-            self.db.update_status(self.report_id, "Resolved")
+        self.db.mark_closed(self.report_id, "Resolved", resolver_id, note)
 
         report = self.db.get_report_by_id(self.report_id) or report
 
@@ -2265,7 +2259,7 @@ class NotResolvedReportModal(discord.ui.Modal):
             interaction, self.db, self.report_id, self._finalize
         )
 
-    async def _finalize(self, interaction: discord.Interaction):
+    async def _finalize(self, interaction: discord.Interaction, *, note: str | None = None):
         if not interaction.guild:
             return await interaction.followup.send("❌ This can only be used in a server.", ephemeral=True)
 
@@ -2274,7 +2268,7 @@ class NotResolvedReportModal(discord.ui.Modal):
             return await interaction.followup.send("❌ Report not found.", ephemeral=True)
 
         resolver_id = int(interaction.user.id)
-        note = str(self.details).strip()
+        note = str(self.details).strip() if note is None else note.strip()
         if not note:
             return await interaction.followup.send("❌ Details are required.", ephemeral=True)
 
@@ -2288,7 +2282,7 @@ class NotResolvedReportModal(discord.ui.Modal):
         if self.close_ticket_channel:
             await self._close_ticket_channel_if_any(interaction, reporter_u)
 
-        self.db.update_status(self.report_id, "Not Resolved")
+        self.db.mark_closed(self.report_id, "Not Resolved", resolver_id, note)
         report = self.db.get_report_by_id(self.report_id) or report
 
         if self.staff_channel_id and report.get("staff_message_id"):
