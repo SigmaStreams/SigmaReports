@@ -2074,7 +2074,8 @@ class ResolveReportModal(discord.ui.Modal):
             return await interaction.response.send_message("❌ Report not found.", ephemeral=True)
         await interaction.response.defer(ephemeral=True)
         await interaction.client.ticket_closures.run(
-            interaction, self.db, self.report_id, self._finalize
+            interaction, self.db, self.report_id, self._finalize,
+            outcome="Resolved", details=str(self.details).strip(),
         )
 
     async def _finalize(self, interaction: discord.Interaction):
@@ -2262,7 +2263,8 @@ class NotResolvedReportModal(discord.ui.Modal):
             return await interaction.response.send_message("❌ Details are required.", ephemeral=True)
         await interaction.response.defer(ephemeral=True)
         await interaction.client.ticket_closures.run(
-            interaction, self.db, self.report_id, self._finalize
+            interaction, self.db, self.report_id, self._finalize,
+            outcome="Not Resolved", details=str(self.details).strip(),
         )
 
     async def _finalize(self, interaction: discord.Interaction):

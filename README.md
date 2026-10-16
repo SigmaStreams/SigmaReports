@@ -555,6 +555,13 @@ Submitting **Resolve** or **Not Resolved** (from the staff report, ticket, or
 `/closereport`) starts a configurable countdown (10 minutes by default) when the report has a linked ticket.
 The bot posts a notice in that ticket with a **Cancel** button. Anyone with access
 can cancel; any new message from someone other than this bot also cancels closure.
+The staff report and ticket action buttons are disabled during the countdown;
+the notice's **Cancel** button stays available. Cancelling restores the actions
+appropriate to the report's current state. Stale clicks and already-open closure
+forms cannot start a second closure.
+Both the staff report and ticket embeds show the pending outcome, staff member,
+and closure details during the countdown. Cancelling (including by sending a
+message) removes this preview; interrupted countdowns are cleaned up on restart.
 The report stays open until the countdown expires. Cancellation keeps both the
 report and ticket open, and staff can start a fresh countdown later. Transcripts
 and closure notifications use the normal closure flow after the countdown.
@@ -562,5 +569,6 @@ and closure notifications use the normal closure flow after the countdown.
 Repeated close requests do not replace an active countdown. Pending countdowns
 are held in memory: restarting the bot leaves those reports and tickets open, and
 staff must request closure again (old Cancel buttons are no longer active).
+The bot restores action buttons for interrupted countdowns when it reconnects.
 Reports without tickets close immediately. The administrative
 `/close-open-reports` bulk cleanup command still closes reports immediately.

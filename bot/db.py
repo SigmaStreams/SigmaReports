@@ -121,6 +121,7 @@ class ReportDB:
         self._ensure_column("reports", "claimed_at", "TEXT")
         self._ensure_column("reports", "resolved_by", "INTEGER")
         self._ensure_column("reports", "resolved_at", "TEXT")
+        self._ensure_column("reports", "closure_pending", "INTEGER NOT NULL DEFAULT 0")
 
         # Default setting values
         if self._get_setting("report_pings_enabled") is None:
@@ -184,6 +185,14 @@ class ReportDB:
         cur = self.conn.cursor()
         cur.execute("UPDATE reports SET status=?, updated_at=? WHERE id=?", (status, _utcnow_iso(), int(report_id)))
         self.conn.commit()
+
+    def set_closure_pending(self, report_id: int, pending: bool) -> None:
+        self.conn.execute("UPDATE reports SET closure_pending=? WHERE id=?", (int(pending), int(report_id)))
+        self.conn.commit()
+
+    def list_pending_closures(self) -> list[dict]:
+        rows = self.conn.execute("SELECT * FROM reports WHERE closure_pending=1").fetchall()
+        return [self._row_to_report(row) for row in rows]
 
     def claim_report(self, report_id: int, staff_user_id: int) -> bool:
         now = _utcnow_iso()
@@ -303,6 +312,7 @@ class ReportDB:
 
         out["claimed_by_user_id"] = row["claimed_by_user_id"]
         out["claimed_at"] = row["claimed_at"]
+        out["closure_pending"] = bool(row["closure_pending"])
 
         if "ticket_channel_id" in row.keys():
             out["ticket_channel_id"] = row["ticket_channel_id"]
