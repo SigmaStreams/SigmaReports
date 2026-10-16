@@ -11,6 +11,19 @@ from bot.utils import _vod_4k_label, _vod_device_label, _vod_language_label, _vo
 CLOSED_STATUSES = {"Resolved", "Can't replicate", "Fixed", "Not Resolved"}
 
 
+async def report_actions_available(interaction, report: dict) -> bool:
+    if report.get("closure_pending"):
+        await interaction.response.send_message(
+            "This report already has a closure in progress. Cancel it in the ticket before making changes.",
+            ephemeral=True,
+        )
+        return False
+    if report.get("status") in CLOSED_STATUSES:
+        await interaction.response.send_message("⚠️ This report is already closed.", ephemeral=True)
+        return False
+    return True
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -113,6 +126,10 @@ class TicketResolveView(discord.ui.View):
         self.staff_role_id = int(staff_role_id or 0)
         self.tickets_category_id = int(tickets_category_id or 0)
 
+    def apply_report_state(self, report: dict):
+        for child in self.children:
+            child.disabled = bool(report.get("closure_pending") or report.get("status") in CLOSED_STATUSES)
+
     def _is_staff(self, interaction: discord.Interaction) -> bool:
         if not self.staff_role_id:
             return True
@@ -144,6 +161,8 @@ class TicketResolveView(discord.ui.View):
         report = self.db.get_report_by_id(report_id)
         if not report:
             return await interaction.response.send_message("❌ Report not found.", ephemeral=True)
+        if not await report_actions_available(interaction, report):
+            return
 
         from bot.modals import ResolveReportModal  # lazy import to avoid circulars
 
@@ -175,6 +194,8 @@ class TicketResolveView(discord.ui.View):
         report = self.db.get_report_by_id(report_id)
         if not report:
             return await interaction.response.send_message("❌ Report not found.", ephemeral=True)
+        if not await report_actions_available(interaction, report):
+            return
 
         from bot.modals import NotResolvedReportModal  # lazy import to avoid circulars
 
@@ -244,9 +265,11 @@ class ReportActionView(discord.ui.View):
         self.tickets_category_id = int(tickets_category_id or 0)
 
     def apply_report_state(self, report: dict):
-        if report.get("status") in CLOSED_STATUSES:
+        if report.get("closure_pending") or report.get("status") in CLOSED_STATUSES:
             self.disable_all()
             return
+        for child in self.children:
+            child.disabled = False
         self.claimed.disabled = bool(
             report.get("claimed_by_user_id") or report.get("ticket_channel_id")
             or report.get("status") in ("Claimed", "Ticket Open")
@@ -318,6 +341,8 @@ class ReportActionView(discord.ui.View):
         report = self.db.get_by_staff_message_id(interaction.message.id)
         if not report:
             return await interaction.response.send_message("❌ Report not found.", ephemeral=True)
+        if not await report_actions_available(interaction, report):
+            return
 
         report_id = int(report["id"])
 
@@ -347,6 +372,8 @@ class ReportActionView(discord.ui.View):
         report = self.db.get_by_staff_message_id(interaction.message.id)
         if not report:
             return await interaction.response.send_message("❌ Report not found.", ephemeral=True)
+        if not await report_actions_available(interaction, report):
+            return
 
         report_id = int(report["id"])
 
@@ -374,6 +401,8 @@ class ReportActionView(discord.ui.View):
         report = self.db.get_by_staff_message_id(interaction.message.id)
         if not report:
             return await interaction.response.send_message("❌ Report not found.", ephemeral=True)
+        if not await report_actions_available(interaction, report):
+            return
 
         if report.get("status") != "Open" or report.get("claimed_by_user_id") or report.get("ticket_channel_id"):
             return await interaction.response.send_message("⚠️ This report is already claimed, closed, or has an open ticket.", ephemeral=True)
@@ -395,6 +424,8 @@ class ReportActionView(discord.ui.View):
         report = self.db.get_report_by_id(report_id)
         if not report:
             return await interaction.response.send_message("❌ Report not found.", ephemeral=True)
+        if not await report_actions_available(interaction, report):
+            return
 
         cfg = getattr(interaction.client, "cfg", None)
         responses = interaction.guild.get_channel(int(getattr(cfg, "responses_channel_id", 0) or 0))
@@ -447,9 +478,8 @@ class ReportActionView(discord.ui.View):
         report = self.db.get_by_staff_message_id(interaction.message.id)
         if not report:
             return await interaction.response.send_message("❌ Report not found.", ephemeral=True)
-
-        if (report.get("status") or "").strip() in CLOSED_STATUSES:
-            return await interaction.response.send_message("⚠️ This report is already closed.", ephemeral=True)
+        if not await report_actions_available(interaction, report):
+            return
 
         guild = interaction.guild
         reporter = await interaction.client.fetch_user(int(report["reporter_id"]))

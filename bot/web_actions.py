@@ -70,7 +70,9 @@ class ReportActions:
         return report
 
     def pending(self, guild, rid):
-        return (guild.id, rid) in self.bot.ticket_closures.pending
+        report = self.db.get_report_by_id(rid)
+        return (guild.id, rid) in self.bot.ticket_closures.pending or bool(
+            report and report["guild_id"] == guild.id and report.get("closure_pending"))
 
     def revision(self, guild, data):
         action = data["action"]
@@ -179,11 +181,16 @@ class ReportActions:
         async def finalize(interaction):
             await authorize()
             current = self.get_report(ctx.guild, rid)
-            if report_revision(current) != expected:
+            # Starting this countdown changes only our own pending flag. Other
+            # report changes must still invalidate the reviewed closure.
+            if report_revision(dict(current, closure_pending=False)) != expected:
                 await ctx.send("The report changed during the grace period. It remains open; review again.")
                 return
             await modal._finalize(interaction, note=note)
-        await self.bot.ticket_closures.run(ctx, self.db, rid, finalize)
+        await self.bot.ticket_closures.run(
+            ctx, self.db, rid, finalize,
+            outcome="Resolved" if action == "resolve" else "Not Resolved", details=note,
+        )
         current = self.get_report(ctx.guild, rid)
         if current["status"] not in CLOSED:
             await ctx.send(f"Report #{rid} remains open; its closure was cancelled or could not be completed.")

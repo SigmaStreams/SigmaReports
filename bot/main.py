@@ -130,6 +130,7 @@ class SigmaReportsBot(commands.Bot):
 
     async def on_ready(self):
         print(f"Logged in as {self.user} (ID: {self.user.id})")
+        await self.ticket_closures.recover_interrupted(self.db)
 
     async def _presence_rotator(self):
         await self.wait_until_ready()

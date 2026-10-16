@@ -4,7 +4,7 @@ from discord.ext import commands
 from datetime import datetime, timezone
 
 from bot.modals import TVReportModal, start_vod_title_flow
-from bot.views import ReportActionView
+from bot.views import ReportActionView, report_actions_available
 from bot.utils import build_staff_embed, report_subject
 
 OWNER_ID = 1229271933736976395
@@ -506,6 +506,9 @@ class Reports(commands.Cog):
             return await interaction.response.send_message("❌ Report not found.", ephemeral=True)
 
         current_status = str(report.get("status") or "").strip()
+        if report.get("closure_pending"):
+            await report_actions_available(interaction, report)
+            return
         if current_status in {"Resolved", "Not Resolved"}:
             return await interaction.response.send_message(
                 f"⚠️ Report **#{report_id}** is already closed (`{current_status}`).",

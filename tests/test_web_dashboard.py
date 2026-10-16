@@ -38,6 +38,26 @@ class BaseDashboardCase(unittest.IsolatedAsyncioTestCase):
         self.channel.fetch_message = AsyncMock(return_value=self.msg)
         self.channel.send = AsyncMock(return_value=self.notice)
         self.channel.delete = AsyncMock()
+        self.msg.embeds = [discord.Embed(title='Report')]
+        self.ticket_msg = SimpleNamespace(
+            author=SimpleNamespace(id=100), edit=AsyncMock(),
+            embeds=[discord.Embed(title='Ticket')],
+            components=[SimpleNamespace(children=[SimpleNamespace(custom_id='ticket:resolve')])])
+        for message in (self.msg, self.ticket_msg):
+            message.fetch = AsyncMock(return_value=message)
+
+            async def edit(*, embeds=None, embed=None, target=message, **kwargs):
+                if embeds is not None:
+                    target.embeds = embeds
+                elif embed is not None:
+                    target.embeds = [embed]
+
+            message.edit.side_effect = edit
+
+        async def history(**kwargs):
+            yield self.ticket_msg
+
+        self.channel.history = Mock(side_effect=history)
         self.guild = SimpleNamespace(id=1, name='Test server', fetch_member=AsyncMock(return_value=self.actor), get_member=lambda uid: self.actor if uid==55 else self.reporter, get_channel=lambda cid: self.channel if cid in {22,44,77} else None, text_channels=[self.channel], me=SimpleNamespace(guild_permissions=SimpleNamespace(manage_channels=True)))
         self.cfg = SimpleNamespace(staff_role_id=99, staff_channel_id=22, support_channel_id=0, tickets_category_id=0, public_updates=False, responses_channel_id=44, transcripts_channel_id=0, ticket_close_delay_minutes=10)
         self.bot = SimpleNamespace(db=self.db, cfg=self.cfg, guilds=[self.guild], get_guild=lambda gid: self.guild if gid==1 else None, get_user=lambda uid:self.reporter, fetch_user=AsyncMock(return_value=self.reporter), is_ready=lambda:True, user=SimpleNamespace(id=100), application_id=123)
@@ -289,19 +309,52 @@ class DashboardTests(BaseDashboardCase):
 
     async def test_ticket_closure_cancel_and_role_recheck(self):
         self.db.set_ticket_channel_id(self.rid,77)
-        data,_=await self.prepared('resolve')
+        data,_=await self.prepared('resolve',note='Audio fixed')
         self.bot.ticket_closures.delay=100
         task=asyncio.create_task(self.dashboard.actions.execute(self.guild,self.actor,data,self.authorize))
-        while not self.bot.ticket_closures.pending: await asyncio.sleep(0)
+        while not self.channel.send.called and not task.done(): await asyncio.sleep(0)
+        for message in (self.msg,self.ticket_msg):
+            fields={field.name:field.value for field in message.embeds[0].fields}
+            self.assertIn('**Resolved**',fields['Pending closure'])
+            self.assertEqual(fields['Pending closure details'],'Audio fixed')
         await self.bot.ticket_closures.on_message(SimpleNamespace(author=SimpleNamespace(id=11),channel=SimpleNamespace(id=77)))
         await task
         self.assertEqual(self.db.get_by_id(self.rid)['status'],'Open')
         self.channel.delete.assert_not_awaited()
+        for message in (self.msg,self.ticket_msg):
+            self.assertFalse(any(field.name.startswith('Pending closure') for field in message.embeds[0].fields))
         self.bot.ticket_closures.delay=.01
         self.authorize.side_effect=[self.actor,web.HTTPForbidden(reason='Role removed')]
         with self.assertRaises(web.HTTPForbidden): await self.dashboard.actions.execute(self.guild,self.actor,data,self.authorize)
         self.assertEqual(self.db.get_by_id(self.rid)['status'],'Open')
         self.channel.delete.assert_not_awaited()
+
+    async def test_ticket_countdown_closes_with_details_and_clears_pending_flag(self):
+        for action,status,details_field in [('resolve','Resolved','Resolution details'),('not_resolved','Not Resolved','Closure details')]:
+            with self.subTest(action=action):
+                self.db.update_status(self.rid,'Ticket Open')
+                self.db.set_ticket_channel_id(self.rid,77)
+                self.channel.delete.reset_mock()
+                data,_=await self.prepared(action,note='Staff explanation')
+                await self.dashboard.actions.execute(self.guild,self.actor,data,self.authorize)
+                report=self.db.get_by_id(self.rid)
+                self.assertEqual(report['status'],status)
+                self.assertEqual(report['resolved_note'],'Staff explanation')
+                self.assertFalse(report['closure_pending'])
+                self.assertFalse(self.bot.ticket_closures.pending)
+                self.channel.delete.assert_awaited_once()
+                fields={field.name:field.value for field in self.msg.embeds[0].fields}
+                self.assertEqual(fields['Status'],status)
+                self.assertEqual(fields[details_field],'Staff explanation')
+                self.assertNotIn('Pending closure',fields)
+
+    async def test_persisted_pending_closure_blocks_dashboard_until_recovery(self):
+        self.db.set_closure_pending(self.rid,True)
+        self.assertFalse(self.bot.ticket_closures.pending)
+        response=await self.guarded(self.dashboard.report,f'/api/report?guild_id=1&report_id={self.rid}')
+        self.assertTrue(body(response)['closing'])
+        with self.assertRaisesRegex(ValueError,'closure in progress'):
+            await self.prepared('resolve',note='Another attempt')
 
     async def test_state_change_during_grace_period_prevents_closure(self):
         self.db.set_ticket_channel_id(self.rid,77)
