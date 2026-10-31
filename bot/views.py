@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 import discord
@@ -527,6 +528,10 @@ class ReportActionView(discord.ui.View):
             return await interaction.response.send_message(f"❌ Failed to create ticket channel: {e!r}", ephemeral=True)
 
         self.db.set_ticket_channel_id(report["id"], ticket_channel.id)
+        # The ticket exists even if sending its welcome message fails.
+        self.db.mark_claimed(int(report["id"]), int(interaction.user.id), _now_iso())
+        self.db.update_status(report["id"], "Ticket Open")
+        report = self.db.get_report_by_id(report["id"])
 
         summary = _build_ticket_embed(report=report, reporter=reporter, guild=guild)
 
@@ -541,9 +546,6 @@ class ReportActionView(discord.ui.View):
 
         await ticket_channel.send(content=reporter.mention, embed=summary, view=resolve_view)
 
-        self.db.mark_claimed(int(report["id"]), int(interaction.user.id), _now_iso())
-        self.db.update_status(report["id"], "Ticket Open")
-        report = self.db.get_report_by_id(report["id"])
         claimed_by_user_id = report["claimed_by_user_id"]
         claimed_at = report["claimed_at"]
 
@@ -566,3 +568,10 @@ class ReportActionView(discord.ui.View):
         view.apply_report_state(report)
         await interaction.response.edit_message(embed=embed, view=view)
         await interaction.followup.send(f"✅ Ticket created: {ticket_channel.mention}", ephemeral=True)
+
+        liveboard = interaction.client.get_cog("LiveboardCog")
+        if liveboard:
+            try:
+                await liveboard.update_liveboard(guild.id)
+            except Exception:
+                logging.getLogger(__name__).exception("Failed to refresh liveboard after opening ticket for report #%s", report["id"])

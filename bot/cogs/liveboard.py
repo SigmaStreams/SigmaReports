@@ -66,6 +66,9 @@ class LiveboardCog(commands.Cog):
     def _format_row(self, guild_id: int, r: dict) -> str:
         rid = r.get("id")
         status = (r.get("status") or "Open").strip()
+        # Older/partially completed ticket creation can leave the previous status.
+        if r.get("ticket_channel_id") and status in {"Open", "Claimed"}:
+            status = "Ticket Open"
 
         payload = r.get("payload") or {}
         rtype = (r.get("report_type") or "").strip()
