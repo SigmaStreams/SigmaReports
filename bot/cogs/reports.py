@@ -21,6 +21,38 @@ def _iso_to_discord_ts(iso: str) -> str:
         return iso
 
 
+class _OpenReportsView(discord.ui.View):
+    def __init__(self, pages: list[discord.Embed], requester_id: int):
+        super().__init__(timeout=180)
+        self.pages = pages
+        self.requester_id = requester_id
+        self.page = 0
+        self._update_buttons()
+
+    def _update_buttons(self):
+        self.previous.disabled = self.page == 0
+        self.next_page.disabled = self.page == len(self.pages) - 1
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id == self.requester_id:
+            return True
+        await interaction.response.send_message("This report list belongs to another user.", ephemeral=True)
+        return False
+
+    async def _show_page(self, interaction: discord.Interaction, page: int):
+        self.page = max(0, min(page, len(self.pages) - 1))
+        self._update_buttons()
+        await interaction.response.edit_message(embed=self.pages[self.page], view=self)
+
+    @discord.ui.button(label="Previous", style=discord.ButtonStyle.secondary)
+    async def previous(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._show_page(interaction, self.page - 1)
+
+    @discord.ui.button(label="Next", style=discord.ButtonStyle.secondary)
+    async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._show_page(interaction, self.page + 1)
+
+
 class Reports(commands.Cog):
     def __init__(self, bot, db, cfg):
         self.bot = bot
@@ -64,12 +96,54 @@ class Reports(commands.Cog):
         created_txt = _iso_to_discord_ts(str(created_at)) if created_at else None
         jump_link = self._staff_jump_link(guild_id, report.get("staff_message_id"))
 
-        parts = [f"**#{rid}**", f"`{status}`", subject]
+        prefix = f"**#{rid}** • `{status}` • "
+        parts = []
         if created_txt:
             parts.append(created_txt)
         if jump_link:
             parts.append(f"[staff]({jump_link})")
-        return " • ".join(parts)
+        suffix = " • " + " • ".join(parts) if parts else ""
+        # Keep the report ID and staff link intact even for an oversized title.
+        subject_limit = 1024 - len(prefix) - len(suffix)
+        if len(subject) > subject_limit:
+            subject = subject[:subject_limit - 1] + "…"
+        return prefix + subject + suffix
+
+    def _build_open_report_pages(self, guild_id: int, reports: list[dict]) -> list[discord.Embed]:
+        groups = {"TV": [], "VOD": [], "Other": []}
+        for report in reports:
+            report_type = str(report.get("report_type") or "").strip().upper()
+            groups[report_type if report_type in {"TV", "VOD"} else "Other"].append(report)
+
+        def new_page():
+            return discord.Embed(
+                title="Open Reports",
+                description=f"Found **{len(reports)}** report(s) still marked open.",
+            )
+
+        pages = [new_page()]
+
+        def add_field(name, value):
+            # Leave room for the page footer within Discord's 6,000-character limit.
+            if len(pages[-1]) + len(name) + len(value) > 5800 or len(pages[-1].fields) >= 25:
+                pages.append(new_page())
+            pages[-1].add_field(name=name, value=value, inline=False)
+
+        for label, group in groups.items():
+            name = f"{label} ({len(group)})"
+            value = ""
+            for report in group:
+                row = self._format_open_report_row(guild_id, report)
+                if value and len(value) + 1 + len(row) > 1024:
+                    add_field(name, value)
+                    value = ""
+                value = f"{value}\n{row}" if value else row
+            if value:
+                add_field(name, value)
+
+        for number, page in enumerate(pages, 1):
+            page.set_footer(text=f"Page {number} of {len(pages)}")
+        return pages
 
     def _is_staff(self, interaction: discord.Interaction) -> bool:
         member = interaction.user if isinstance(interaction.user, discord.Member) else None
@@ -437,43 +511,9 @@ class Reports(commands.Cog):
                 ephemeral=True,
             )
 
-        tv_reports = [r for r in reports if str(r.get("report_type") or "").strip().upper() == "TV"]
-        vod_reports = [r for r in reports if str(r.get("report_type") or "").strip().upper() == "VOD"]
-        other_reports = [
-            r for r in reports
-            if str(r.get("report_type") or "").strip().upper() not in {"TV", "VOD"}
-        ]
-
-        embed = discord.Embed(
-            title="Open Reports",
-            description=f"Found **{len(reports)}** report(s) still marked open.",
-        )
-
-        if tv_reports:
-            embed.add_field(
-                name=f"TV ({len(tv_reports)})",
-                value="\n".join(self._format_open_report_row(interaction.guild.id, r) for r in tv_reports[:20]),
-                inline=False,
-            )
-
-        if vod_reports:
-            embed.add_field(
-                name=f"VOD ({len(vod_reports)})",
-                value="\n".join(self._format_open_report_row(interaction.guild.id, r) for r in vod_reports[:20]),
-                inline=False,
-            )
-
-        if other_reports:
-            embed.add_field(
-                name=f"Other ({len(other_reports)})",
-                value="\n".join(self._format_open_report_row(interaction.guild.id, r) for r in other_reports[:20]),
-                inline=False,
-            )
-
-        if len(reports) > 60:
-            embed.set_footer(text=f"Showing the first 60 reports out of {len(reports)}.")
-
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        pages = self._build_open_report_pages(interaction.guild.id, reports)
+        view = _OpenReportsView(pages, interaction.user.id) if len(pages) > 1 else None
+        await interaction.response.send_message(embed=pages[0], view=view, ephemeral=True)
 
     # ----------------------------
     # Close report
