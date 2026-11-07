@@ -12,6 +12,12 @@ from bot.utils import _vod_episode_label, _vod_english_title, build_staff_embed,
 from bot.views import ReportActionView
 
 
+VOD_REMUX_ROLE_IDS = frozenset({
+    1526787579641462844,  # Plex Remux
+    1559995916717654048,  # Silo Remux
+})
+
+
 def build_staff_ping(ping_ids: list[int]) -> str:
     if not ping_ids:
         return ""
@@ -286,10 +292,9 @@ def _normalize_vod_library(value: str) -> tuple[str, str]:
     return (_normalize_vod_4k(value), "")
 
 
-def _can_report_vod_remux(interaction: discord.Interaction, cfg) -> bool:
-    remux_role_id = int(getattr(cfg, "ss_vod_remux_role_id", 0) or 0)
+def _can_report_vod_remux(interaction: discord.Interaction) -> bool:
     member_roles = getattr(interaction.user, "roles", ())
-    return remux_role_id > 0 and any(role.id == remux_role_id for role in member_roles)
+    return any(role.id in VOD_REMUX_ROLE_IDS for role in member_roles)
 
 
 def _normalize_vod_content_type(value: str) -> str:
@@ -1375,7 +1380,7 @@ class _VODReviewView(_VODStepView):
                 self.cfg,
                 self.requester_id,
                 self.state,
-                include_remux=_can_report_vod_remux(interaction, self.cfg),
+                include_remux=_can_report_vod_remux(interaction),
             )
         elif field == "episodes":
             await _start_vod_episode_picker(interaction, self.db, self.cfg, self.requester_id, self.state)
@@ -1510,7 +1515,7 @@ class _VODLanguageQuestionView(_VODStepView):
                 self.cfg,
                 self.requester_id,
                 self.state,
-                include_remux=_can_report_vod_remux(interaction, self.cfg),
+                include_remux=_can_report_vod_remux(interaction),
             ),
         )
 

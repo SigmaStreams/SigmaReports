@@ -42,7 +42,6 @@ class Config:
     tmdb_bearer_token: str
     tvdb_key: str
     staff_role_id: int
-    ss_vod_remux_role_id: int
     modlogs_channel_id: int
     responses_channel_id: int
     transcripts_channel_id: int
@@ -98,10 +97,6 @@ def load_config() -> Config:
     if staff_role_id <= 0:
         raise RuntimeError("Missing STAFF_ROLE_ID in .env")
 
-    ss_vod_remux_role_id = int(os.getenv("SS_VOD_REMUX_ROLE_ID", "0"))
-    if ss_vod_remux_role_id <= 0:
-        raise RuntimeError("Missing SS_VOD_REMUX_ROLE_ID in .env")
-
     modlogs_channel_id = int(os.getenv("MODLOGS_CHANNEL_ID", "0"))
     transcripts_channel_id = int(os.getenv("TRANSCRIPTS_CHANNEL_ID", "0"))
 
@@ -125,7 +120,6 @@ def load_config() -> Config:
         tmdb_bearer_token=tmdb_bearer_token,
         tvdb_key=tvdb_key,
         staff_role_id=staff_role_id,
-        ss_vod_remux_role_id=ss_vod_remux_role_id,
         modlogs_channel_id=modlogs_channel_id,
         transcripts_channel_id=transcripts_channel_id,
         responses_channel_id=responses_channel_id,

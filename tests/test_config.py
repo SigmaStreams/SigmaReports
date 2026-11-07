@@ -10,7 +10,7 @@ class TicketCloseConfigTests(unittest.TestCase):
         env = {
             "DISCORD_TOKEN": "test-token", "STAFF_CHANNEL_ID": "1",
             "REPORTS_CHANNEL_IDS": "2", "STAFF_ROLE_ID": "3",
-            "SS_VOD_REMUX_ROLE_ID": "4", "PUBLIC_UPDATES": "false",
+            "PUBLIC_UPDATES": "false",
         }
         if value is not None:
             env["TICKET_CLOSE_DELAY_MINUTES"] = value
